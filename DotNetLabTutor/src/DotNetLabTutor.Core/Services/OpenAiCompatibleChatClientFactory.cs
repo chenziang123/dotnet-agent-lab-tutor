@@ -1,0 +1,117 @@
+using System.ClientModel;
+using System.ClientModel.Primitives;
+using DotNetLabTutor.Core.Configuration;
+using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using OpenAI;
+
+namespace DotNetLabTutor.Core.Services;
+
+public interface IChatClientFactory
+{
+    IChatClient CreateChatClient();
+}
+
+public sealed class OpenAiCompatibleChatClientFactory : IChatClientFactory
+{
+    private readonly LlmOptions _options;
+    private readonly ILogger<OpenAiCompatibleChatClientFactory> _logger;
+
+    public OpenAiCompatibleChatClientFactory(
+        IOptions<LlmOptions> options,
+        ILogger<OpenAiCompatibleChatClientFactory> logger)
+    {
+        _options = options.Value;
+        _logger = logger;
+    }
+
+    public IChatClient CreateChatClient()
+    {
+        var apiKey = ResolveApiKey();
+        var baseUrl = ResolveBaseUrl(apiKey);
+        var model = ResolveModel();
+
+        _logger.LogInformation(
+            "Creating chat client. Provider={Provider}, Model={Model}, BaseUrl={BaseUrl}",
+            _options.Provider,
+            model,
+            baseUrl);
+
+        var httpClient = CreateHttpClient(apiKey);
+        var clientOptions = new OpenAIClientOptions
+        {
+            Endpoint = new Uri(baseUrl),
+            Transport = new HttpClientPipelineTransport(httpClient),
+        };
+
+        var openAiClient = new OpenAIClient(new ApiKeyCredential(apiKey), clientOptions);
+        return openAiClient.GetChatClient(model).AsIChatClient();
+    }
+
+    private string ResolveApiKey()
+    {
+        var apiKey = Environment.GetEnvironmentVariable("MIMO_API_KEY")?.Trim()
+            ?? Environment.GetEnvironmentVariable("OPENAI_API_KEY")?.Trim()
+            ?? _options.ApiKey?.Trim();
+
+        if (string.IsNullOrWhiteSpace(apiKey))
+        {
+            throw new InvalidOperationException(
+                "未配置 LLM API Key。请设置环境变量 MIMO_API_KEY 或 OPENAI_API_KEY，或在 appsettings.json 的 Llm:ApiKey 中配置。");
+        }
+
+        return apiKey;
+    }
+
+    private string ResolveBaseUrl(string apiKey)
+    {
+        var envBaseUrl = Environment.GetEnvironmentVariable("MIMO_BASE_URL")?.Trim()
+            ?? Environment.GetEnvironmentVariable("OPENAI_BASE_URL")?.Trim();
+
+        if (!string.IsNullOrWhiteSpace(envBaseUrl))
+        {
+            return envBaseUrl;
+        }
+
+        if (!string.IsNullOrWhiteSpace(_options.BaseUrl))
+        {
+            return _options.BaseUrl.TrimEnd('/') + "/";
+        }
+
+        return apiKey.StartsWith("tp-", StringComparison.OrdinalIgnoreCase)
+            ? "https://token-plan-cn.xiaomimimo.com/v1/"
+            : "https://api.xiaomimimo.com/v1/";
+    }
+
+    private string ResolveModel()
+        => Environment.GetEnvironmentVariable("MIMO_MODEL")?.Trim()
+           ?? Environment.GetEnvironmentVariable("OPENAI_MODEL")?.Trim()
+           ?? _options.Model;
+
+    private static HttpClient CreateHttpClient(string apiKey)
+    {
+        if (string.Equals(
+                Environment.GetEnvironmentVariable("LLM_AUTH_SCHEME")?.Trim(),
+                "Bearer",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return new HttpClient();
+        }
+
+        return new HttpClient(new MimoApiKeyHandler(new HttpClientHandler(), apiKey));
+    }
+
+    private sealed class MimoApiKeyHandler(HttpMessageHandler innerHandler, string apiKey)
+        : DelegatingHandler(innerHandler)
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            request.Headers.Remove("Authorization");
+            request.Headers.TryAddWithoutValidation("api-key", apiKey);
+            return base.SendAsync(request, cancellationToken);
+        }
+    }
+}

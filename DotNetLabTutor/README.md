@@ -1,0 +1,71 @@
+# .NET 实验助教 Agent
+
+面向 .NET / AI Agent 课程实验的智能助教，支持 ReAct 推理循环、工具调用与（后续）RAG 知识库检索。
+
+## 当前阶段
+
+**A 阶段（已完成）：** 项目骨架 + Agent Loop + Mock Tool + 接口定义  
+**B 阶段（待做）：** 真实 RAG 向量检索  
+**C 阶段（待做）：** 真实 Tool + Memory 深度集成  
+**D 阶段（待做）：** Multi-Agent + UI 增强
+
+## 环境要求
+
+- .NET 9 SDK
+- LLM API Key（推荐 MiMo，与课程练习一致）
+
+## 配置
+
+在 PowerShell 中设置环境变量：
+
+```powershell
+$env:MIMO_API_KEY = "你的密钥"
+$env:MIMO_MODEL = "mimo-v2.5-pro"   # 可选
+```
+
+也可在 `src/DotNetLabTutor.Console/appsettings.json` 中配置 `Llm` 节点（ApiKey 建议只用环境变量，勿提交仓库）。
+
+| 环境变量 | 说明 |
+|----------|------|
+| `MIMO_API_KEY` | MiMo API 密钥（优先） |
+| `MIMO_BASE_URL` | 可选，默认自动选择 |
+| `MIMO_MODEL` | 模型名，默认 `mimo-v2.5-pro` |
+| `OPENAI_API_KEY` | 备选，OpenAI 兼容接口 |
+
+## 构建与运行
+
+```powershell
+cd DotNetLabTutor
+dotnet build
+dotnet run --project src/DotNetLabTutor.Console
+```
+
+## 控制台命令
+
+| 命令 | 说明 |
+|------|------|
+| `exit` / `quit` / `q` | 退出 |
+| `clear` | 清空会话记忆 |
+
+## 示例问题
+
+- `什么是 ReAct？`
+- `请列出课程主题`
+- `Semantic Kernel Agent Framework 是什么？`
+
+## 项目结构
+
+```
+DotNetLabTutor/
+├── src/
+│   ├── DotNetLabTutor.Core/       # Agent 核心、接口、Memory
+│   ├── DotNetLabTutor.Rag/        # RAG（当前为 Stub）
+│   ├── DotNetLabTutor.Tools/      # Mock Tool（C 阶段替换）
+│   └── DotNetLabTutor.Console/    # 控制台入口
+├── docs/                          # 交接与架构文档
+└── README.md
+```
+
+## 成员接力
+
+详见 `docs/handoff-A.md`（A → B 交接说明）。
