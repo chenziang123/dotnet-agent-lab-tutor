@@ -25,6 +25,7 @@ Thumbs.db
 **/appsettings.Development.json
 .env
 .env.*
+run.local.ps1
 
 # Agent transcripts / local only (optional)
 *.pdf.bak

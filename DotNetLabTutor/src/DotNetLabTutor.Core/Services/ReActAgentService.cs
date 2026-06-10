@@ -13,11 +13,12 @@ namespace DotNetLabTutor.Core.Services;
 /// </summary>
 public sealed class ReActAgentService : IAgentService
 {
-    private readonly IChatClient _chatClient;
+    private readonly IChatClientFactory _chatClientFactory;
     private readonly ISessionMemory _sessionMemory;
     private readonly AgentOptions _agentOptions;
     private readonly ILogger<ReActAgentService> _logger;
     private readonly IList<AIFunction> _tools;
+    private IChatClient? _chatClient;
 
     public ReActAgentService(
         IChatClientFactory chatClientFactory,
@@ -26,12 +27,14 @@ public sealed class ReActAgentService : IAgentService
         IOptions<AgentOptions> agentOptions,
         ILogger<ReActAgentService> logger)
     {
-        _chatClient = chatClientFactory.CreateChatClient();
+        _chatClientFactory = chatClientFactory;
         _sessionMemory = sessionMemory;
         _tools = tools.ToList();
         _agentOptions = agentOptions.Value;
         _logger = logger;
     }
+
+    private IChatClient ChatClient => _chatClient ??= _chatClientFactory.CreateChatClient();
 
     public async Task<AgentRunResult> RunAsync(
         string userMessage,
@@ -54,7 +57,7 @@ public sealed class ReActAgentService : IAgentService
             ChatResponse response;
             try
             {
-                response = await _chatClient.GetResponseAsync(messages, chatOptions, cancellationToken);
+                response = await ChatClient.GetResponseAsync(messages, chatOptions, cancellationToken);
             }
             catch (Exception ex)
             {

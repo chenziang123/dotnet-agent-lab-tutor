@@ -1,0 +1,11 @@
+# 复制本文件为 run.local.ps1，填入本组 MiMo 按量付费 Key 后运行。
+# run.local.ps1 已在 .gitignore 中，不会提交到 Git。
+
+$env:MIMO_API_KEY = "sk-在这里填入本组密钥"
+$env:MIMO_MODEL = "mimo-v2.5-pro"
+# 按量付费 sk- Key 一般无需设置 BaseUrl，程序会自动选择 api.xiaomimimo.com
+
+Set-Location $PSScriptRoot
+dotnet build
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+dotnet run --project src/DotNetLabTutor.Console --no-build

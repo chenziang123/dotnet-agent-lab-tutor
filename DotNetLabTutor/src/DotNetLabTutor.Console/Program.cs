@@ -2,75 +2,111 @@
 using DotNetLabTutor.Core.Abstractions;
 using DotNetLabTutor.Rag;
 using DotNetLabTutor.Tools;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
-var builder = Host.CreateApplicationBuilder(args);
+Console.OutputEncoding = System.Text.Encoding.UTF8;
+Console.WriteLine("正在启动 .NET 实验助教 Agent...");
+Console.Out.Flush();
 
-builder.Logging.ClearProviders();
-builder.Logging.AddSimpleConsole(options =>
+try
 {
-    options.SingleLine = true;
-    options.TimestampFormat = "[HH:mm:ss] ";
-});
+    Console.WriteLine("[1/4] 加载配置...");
+    Console.Out.Flush();
 
-builder.Services
-    .AddDotNetLabTutorCore()
-    .AddDotNetLabTutorRag()
-    .AddDotNetLabTutorTools();
+    var configuration = new ConfigurationBuilder()
+        .SetBasePath(AppContext.BaseDirectory)
+        .AddJsonFile("appsettings.json", optional: true)
+        .AddEnvironmentVariables()
+        .Build();
 
-using var host = builder.Build();
+    Console.WriteLine("[2/4] 注册服务...");
+    Console.Out.Flush();
 
-var logger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Program");
-var ragService = host.Services.GetRequiredService<IRagService>();
-var agentService = host.Services.GetRequiredService<IAgentService>();
+    var services = new ServiceCollection();
+    services.AddSingleton<IConfiguration>(configuration);
+    services.AddLogging(logging =>
+    {
+        logging.ClearProviders();
+        logging.AddSimpleConsole(options =>
+        {
+            options.SingleLine = true;
+            options.TimestampFormat = "[HH:mm:ss] ";
+        });
+        logging.SetMinimumLevel(LogLevel.Information);
+    });
 
-await ragService.InitializeAsync();
+    services
+        .AddDotNetLabTutorCore()
+        .AddDotNetLabTutorRag()
+        .AddDotNetLabTutorTools();
 
-PrintWelcome();
+    Console.WriteLine("[3/4] 构建依赖注入容器...");
+    Console.Out.Flush();
 
-while (true)
+    await using var provider = services.BuildServiceProvider();
+
+    Console.WriteLine("[4/4] 初始化模块...");
+    Console.Out.Flush();
+
+    var ragService = provider.GetRequiredService<IRagService>();
+    await ragService.InitializeAsync();
+
+    PrintWelcome();
+    Console.Out.Flush();
+
+    var logger = provider.GetRequiredService<ILoggerFactory>().CreateLogger("Program");
+
+    while (true)
+    {
+        Console.Write("你: ");
+        Console.Out.Flush();
+        var input = Console.ReadLine()?.Trim();
+
+        if (string.IsNullOrWhiteSpace(input))
+        {
+            continue;
+        }
+
+        if (input.Equals("exit", StringComparison.OrdinalIgnoreCase)
+            || input.Equals("quit", StringComparison.OrdinalIgnoreCase)
+            || input.Equals("q", StringComparison.OrdinalIgnoreCase))
+        {
+            Console.WriteLine("再见！");
+            break;
+        }
+
+        if (input.Equals("clear", StringComparison.OrdinalIgnoreCase))
+        {
+            provider.GetRequiredService<ISessionMemory>().Clear();
+            Console.WriteLine("（会话记忆已清空）");
+            continue;
+        }
+
+        try
+        {
+            Console.WriteLine();
+            var agentService = provider.GetRequiredService<IAgentService>();
+            var result = await agentService.RunAsync(input);
+            Console.WriteLine();
+            Console.WriteLine($"助教: {result.Answer}");
+            Console.WriteLine($"（推理步数: {result.StepsUsed}{(result.ReachedStepLimit ? "，已达上限" : "")}）");
+            Console.WriteLine();
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Agent 运行失败");
+            Console.WriteLine($"错误: {ex.Message}");
+            Console.WriteLine("请检查 MIMO_API_KEY 是否已配置。");
+            Console.WriteLine();
+        }
+    }
+}
+catch (Exception ex)
 {
-    Console.Write("你: ");
-    var input = Console.ReadLine()?.Trim();
-
-    if (string.IsNullOrWhiteSpace(input))
-    {
-        continue;
-    }
-
-    if (input.Equals("exit", StringComparison.OrdinalIgnoreCase)
-        || input.Equals("quit", StringComparison.OrdinalIgnoreCase)
-        || input.Equals("q", StringComparison.OrdinalIgnoreCase))
-    {
-        Console.WriteLine("再见！");
-        break;
-    }
-
-    if (input.Equals("clear", StringComparison.OrdinalIgnoreCase))
-    {
-        host.Services.GetRequiredService<ISessionMemory>().Clear();
-        Console.WriteLine("（会话记忆已清空）");
-        continue;
-    }
-
-    try
-    {
-        Console.WriteLine();
-        var result = await agentService.RunAsync(input);
-        Console.WriteLine();
-        Console.WriteLine($"助教: {result.Answer}");
-        Console.WriteLine($"（推理步数: {result.StepsUsed}{(result.ReachedStepLimit ? "，已达上限" : "")}）");
-        Console.WriteLine();
-    }
-    catch (Exception ex)
-    {
-        logger.LogError(ex, "Agent 运行失败");
-        Console.WriteLine($"错误: {ex.Message}");
-        Console.WriteLine("请检查 MIMO_API_KEY 是否已配置。");
-        Console.WriteLine();
-    }
+    Console.WriteLine($"启动失败: {ex.Message}");
+    Console.WriteLine(ex.StackTrace);
 }
 
 static void PrintWelcome()

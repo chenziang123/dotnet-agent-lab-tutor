@@ -71,18 +71,30 @@ public sealed class OpenAiCompatibleChatClientFactory : IChatClientFactory
 
         if (!string.IsNullOrWhiteSpace(envBaseUrl))
         {
-            return envBaseUrl;
+            return NormalizeBaseUrl(envBaseUrl);
+        }
+
+        // 课内练习：tp- 套餐 Key → token-plan-cn
+        if (apiKey.StartsWith("tp-", StringComparison.OrdinalIgnoreCase))
+        {
+            return "https://token-plan-cn.xiaomimimo.com/v1/";
+        }
+
+        // 本组按量付费：sk- Key → 国内按量端点（默认）
+        if (apiKey.StartsWith("sk-", StringComparison.OrdinalIgnoreCase))
+        {
+            return "https://api.xiaomimimo.com/v1/";
         }
 
         if (!string.IsNullOrWhiteSpace(_options.BaseUrl))
         {
-            return _options.BaseUrl.TrimEnd('/') + "/";
+            return NormalizeBaseUrl(_options.BaseUrl);
         }
 
-        return apiKey.StartsWith("tp-", StringComparison.OrdinalIgnoreCase)
-            ? "https://token-plan-cn.xiaomimimo.com/v1/"
-            : "https://api.xiaomimimo.com/v1/";
+        return "https://api.xiaomimimo.com/v1/";
     }
+
+    private static string NormalizeBaseUrl(string url) => url.TrimEnd('/') + "/";
 
     private string ResolveModel()
         => Environment.GetEnvironmentVariable("MIMO_MODEL")?.Trim()
@@ -91,15 +103,17 @@ public sealed class OpenAiCompatibleChatClientFactory : IChatClientFactory
 
     private static HttpClient CreateHttpClient(string apiKey)
     {
-        if (string.Equals(
-                Environment.GetEnvironmentVariable("LLM_AUTH_SCHEME")?.Trim(),
-                "Bearer",
-                StringComparison.OrdinalIgnoreCase))
+        var authScheme = Environment.GetEnvironmentVariable("LLM_AUTH_SCHEME")?.Trim();
+
+        // tp- 套餐 Key：MiMo 要求 api-key 请求头
+        if (apiKey.StartsWith("tp-", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(authScheme, "Bearer", StringComparison.OrdinalIgnoreCase))
         {
-            return new HttpClient();
+            return new HttpClient(new MimoApiKeyHandler(new HttpClientHandler(), apiKey));
         }
 
-        return new HttpClient(new MimoApiKeyHandler(new HttpClientHandler(), apiKey));
+        // sk- 按量付费：OpenAI 兼容 Bearer（由 OpenAI SDK + ApiKeyCredential 自动添加）
+        return new HttpClient();
     }
 
     private sealed class MimoApiKeyHandler(HttpMessageHandler innerHandler, string apiKey)

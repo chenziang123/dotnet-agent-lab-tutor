@@ -14,23 +14,28 @@
 - .NET 9 SDK
 - LLM API Key（推荐 MiMo，与课程练习一致）
 
-## 配置
+## 配置（本组 MiMo 按量付费 `sk-` Key）
 
-在 PowerShell 中设置环境变量：
+1. 复制 `run.local.ps1.example` 为 `run.local.ps1`
+2. 在 `run.local.ps1` 中填入本组 `sk-` 密钥（**勿提交 Git**）
+3. 运行：`.\run.local.ps1`
+
+或手动设置环境变量：
 
 ```powershell
-$env:MIMO_API_KEY = "你的密钥"
-$env:MIMO_MODEL = "mimo-v2.5-pro"   # 可选
+$env:MIMO_API_KEY = "sk-你的密钥"   # 本组按量付费 Key
+$env:MIMO_MODEL = "mimo-v2.5-pro"    # 可选
+dotnet build
+dotnet run --project src/DotNetLabTutor.Console --no-build
 ```
-
-也可在 `src/DotNetLabTutor.Console/appsettings.json` 中配置 `Llm` 节点（ApiKey 建议只用环境变量，勿提交仓库）。
 
 | 环境变量 | 说明 |
 |----------|------|
-| `MIMO_API_KEY` | MiMo API 密钥（优先） |
-| `MIMO_BASE_URL` | 可选，默认自动选择 |
+| `MIMO_API_KEY` | 本组 MiMo Key（`sk-` 按量付费，程序自动选端点） |
 | `MIMO_MODEL` | 模型名，默认 `mimo-v2.5-pro` |
-| `OPENAI_API_KEY` | 备选，OpenAI 兼容接口 |
+| `MIMO_BASE_URL` | 一般不需要；`sk-` → api.xiaomimimo.com，`tp-` → token-plan-cn |
+
+详细说明见 [`docs/team-api-setup.md`](../docs/team-api-setup.md)。
 
 ## 构建与运行
 
