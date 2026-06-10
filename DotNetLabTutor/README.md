@@ -60,17 +60,24 @@ dotnet run --project src/DotNetLabTutor.Console
 
 ## 项目结构
 
+本 README 位于 `DotNetLabTutor/` 目录；仓库根目录结构如下：
+
 ```
-DotNetLabTutor/
-├── src/
-│   ├── DotNetLabTutor.Core/       # Agent 核心、接口、Memory
-│   ├── DotNetLabTutor.Rag/        # RAG（当前为 Stub）
-│   ├── DotNetLabTutor.Tools/      # Mock Tool（C 阶段替换）
-│   └── DotNetLabTutor.Console/    # 控制台入口
-├── docs/                          # 交接与架构文档
-└── README.md
+dotnet-agent-lab-tutor/          # Git 仓库根目录
+├── DotNetLabTutor/              # Solution（本目录）
+│   ├── src/
+│   │   ├── DotNetLabTutor.Core/       # Agent 核心、接口、Memory、ReAct
+│   │   ├── DotNetLabTutor.Rag/        # RAG（A 阶段 Stub，B 替换）
+│   │   ├── DotNetLabTutor.Tools/      # Mock Tool（C 阶段替换）
+│   │   └── DotNetLabTutor.Console/    # 控制台入口
+│   ├── DotNetLabTutor.sln
+│   ├── run.local.ps1.example
+│   └── README.md
+├── docs/                        # 交接文档、团队分工、PPT 素材
+├── resource/                    # 课程课件 Markdown（B 阶段 RAG 知识库）
+└── .gitignore
 ```
 
 ## 成员接力
 
-详见 `docs/handoff-A.md`（A → B 交接说明）。
+详见 [`docs/handoff-A.md`](../docs/handoff-A.md)（A → B 交接说明）。
