@@ -2,13 +2,15 @@
 [Bb]in/
 [Oo]bj/
 
-# Visual Studio / Rider
+# IDE
 .vs/
 .idea/
 *.user
 *.suo
 *.userosscache
 *.sln.docstates
+.trae/
+.atomcode/
 
 # NuGet
 *.nupkg
