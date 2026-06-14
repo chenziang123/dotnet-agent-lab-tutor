@@ -60,9 +60,9 @@ public sealed class CourseTools
         return builder.ToString();
     }
 
-    [Description("根据SearchCourseDocs返回的chunkId读取完整文档片段。仅当需要展开某个已检索片段时调用。")]
+    [Description("根据SearchCourseDocs返回的chunkId读取完整文档片段，或按resource目录下的Markdown文件名读取文档。")]
     public async Task<string> GetDocSection(
-        [Description("文档片段ID，例如06-ibm-react-agent-2")] string chunkId,
+        [Description("文档片段ID或Markdown文件名，例如06-ibm-react-agent-2或06-ibm-react-agent.md")] string chunkId,
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(chunkId))
@@ -70,10 +70,31 @@ public sealed class CourseTools
             return "未找到文档片段：chunkId为空。请先调用SearchCourseDocs获取有效chunkId。";
         }
 
-        var result = await _ragService.GetChunkAsync(chunkId.Trim(), cancellationToken);
+        var identifier = chunkId.Trim();
+        var result = await _ragService.GetChunkAsync(identifier, cancellationToken);
         if (result is null)
         {
-            return $"未找到文档片段：chunkId=\"{chunkId}\"。请先调用SearchCourseDocs获取有效chunkId。";
+            var document = await TryReadResourceDocumentAsync(identifier, cancellationToken);
+            if (document is null)
+            {
+                return $"未找到文档片段或文档文件：identifier=\"{chunkId}\"。请先调用SearchCourseDocs获取有效chunkId，或提供resource目录下的Markdown文件名。";
+            }
+
+            _sessionMemory.UpdateWorkState(state =>
+            {
+                state.CurrentExperiment = document.Value.FileName;
+                state.CurrentTopic = "完整文档";
+            });
+
+            return $"""
+                文档文件：
+                来源: {document.Value.FileName}
+                章节: 完整文档
+                内容:
+                {document.Value.Content}
+
+                回答用户时必须引用来源：{document.Value.FileName} / 完整文档
+                """;
         }
 
         RememberRetrieval([result]);
@@ -134,5 +155,56 @@ public sealed class CourseTools
                 }
             }
         });
+    }
+
+    private static async Task<(string FileName, string Content)?> TryReadResourceDocumentAsync(
+        string identifier,
+        CancellationToken cancellationToken)
+    {
+        var fileName = Path.GetFileName(identifier);
+        if (string.IsNullOrWhiteSpace(fileName)
+            || !fileName.EndsWith(".md", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        var resourceDirectory = ResolveResourceDirectory();
+        if (resourceDirectory is null)
+        {
+            return null;
+        }
+
+        var fullPath = Path.GetFullPath(Path.Combine(resourceDirectory, fileName));
+        var resourceRoot = Path.GetFullPath(resourceDirectory);
+        if (!fullPath.StartsWith(resourceRoot, StringComparison.OrdinalIgnoreCase)
+            || !File.Exists(fullPath))
+        {
+            return null;
+        }
+
+        var content = await File.ReadAllTextAsync(fullPath, cancellationToken);
+        return (fileName, content.Trim());
+    }
+
+    private static string? ResolveResourceDirectory()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        for (var i = 0; i < 10; i++)
+        {
+            var candidate = Path.Combine(dir.FullName, "resource");
+            if (Directory.Exists(candidate))
+            {
+                return candidate;
+            }
+
+            if (dir.Parent is null)
+            {
+                break;
+            }
+
+            dir = dir.Parent;
+        }
+
+        return null;
     }
 }

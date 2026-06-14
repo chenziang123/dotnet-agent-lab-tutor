@@ -48,8 +48,34 @@ public sealed class CourseToolsTests
 
         var result = await tools.GetDocSection("missing");
 
-        Assert.Contains("未找到文档片段", result);
+        Assert.Contains("未找到文档片段或文档文件", result);
         Assert.Contains("missing", result);
+    }
+
+    [Fact]
+    public async Task GetDocSection_WithResourceFileName_ReturnsMarkdownDocument()
+    {
+        var memory = new InMemorySessionMemory();
+        var tools = new CourseTools(new FakeRagService([]), memory);
+
+        var result = await tools.GetDocSection("06-ibm-react-agent.md");
+
+        Assert.Contains("文档文件", result);
+        Assert.Contains("06-ibm-react-agent.md", result);
+        Assert.Contains("完整文档", result);
+        Assert.Equal("06-ibm-react-agent.md", memory.GetWorkState().CurrentExperiment);
+        Assert.Equal("完整文档", memory.GetWorkState().CurrentTopic);
+    }
+
+    [Fact]
+    public async Task GetDocSection_WithNonMarkdownFileName_ReturnsClearMessage()
+    {
+        var tools = new CourseTools(new FakeRagService([]), new InMemorySessionMemory());
+
+        var result = await tools.GetDocSection("appsettings.json");
+
+        Assert.Contains("未找到文档片段或文档文件", result);
+        Assert.DoesNotContain("ApiKey", result);
     }
 
     [Fact]

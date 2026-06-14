@@ -21,18 +21,16 @@ public sealed class GuiTools : IAsyncDisposable
         _sessionMemory = sessionMemory;
     }
 
-    [Description("打开一个Web页面，供GUIAgent观察页面状态。支持http、https和file URL。")]
+    [Description("打开本机Web页面或本地HTML文件，供GUIAgent观察页面状态。http/https仅允许localhost，file仅允许.html/.htm。")]
     public async Task<string> OpenPage(
         [Description("要打开的URL，例如http://localhost:5000或file:///C:/demo.html")] string url,
         [Description("是否使用无头浏览器，默认true")] bool headless = true,
         CancellationToken cancellationToken = default)
     {
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri)
-            || (uri.Scheme != Uri.UriSchemeHttp
-                && uri.Scheme != Uri.UriSchemeHttps
-                && uri.Scheme != Uri.UriSchemeFile))
+            || !IsAllowedGuiUri(uri))
         {
-            return "GUI观察失败：URL无效。请提供http、https或file开头的绝对URL。";
+            return "GUI观察失败：URL无效或不在允许范围内。仅允许localhost的http/https页面，或本地.html/.htm文件。";
         }
 
         await _gate.WaitAsync(cancellationToken);
@@ -370,6 +368,24 @@ public sealed class GuiTools : IAsyncDisposable
 
         var first = locator.Split([' ', '[', ':', '.'], StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
         return first is "input" or "textarea" or "button" or "a" or "select" or "form";
+    }
+
+    private static bool IsAllowedGuiUri(Uri uri)
+    {
+        if (uri.Scheme.Equals(Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase)
+            || uri.Scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
+        {
+            return uri.IsLoopback;
+        }
+
+        if (uri.Scheme == Uri.UriSchemeFile)
+        {
+            var extension = Path.GetExtension(uri.LocalPath);
+            return extension.Equals(".html", StringComparison.OrdinalIgnoreCase)
+                || extension.Equals(".htm", StringComparison.OrdinalIgnoreCase);
+        }
+
+        return false;
     }
 
     private void RememberGuiObservation(string observation)

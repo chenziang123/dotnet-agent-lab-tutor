@@ -54,7 +54,7 @@ dotnet test
 当前测试覆盖：
 
 - `DotNetLabTutor.Rag.Tests`：文档切块、检索、元数据、`GetChunkAsync`
-- `DotNetLabTutor.Tools.Tests`：真实Tool返回格式、空检索处理、工作记忆更新、GUI观察/操作工具边界行为
+- `DotNetLabTutor.Tools.Tests`：真实Tool返回格式、文件名读取、空检索处理、工作记忆更新、GUI观察/操作工具边界行为
 
 可选GUI集成测试：
 
@@ -63,6 +63,8 @@ powershell -ExecutionPolicy Bypass -File tests\DotNetLabTutor.Tools.Tests\bin\De
 $env:DOTNETLABTUTOR_RUN_GUI_TESTS="1"
 dotnet test tests\DotNetLabTutor.Tools.Tests\DotNetLabTutor.Tools.Tests.csproj --filter GuiTools_WithBrowserInstalled_CanInspectAndScreenshotPage
 ```
+
+GUIAgent出于安全考虑只允许打开localhost页面或本地`.html/.htm`文件。
 
 ## 控制台命令
 

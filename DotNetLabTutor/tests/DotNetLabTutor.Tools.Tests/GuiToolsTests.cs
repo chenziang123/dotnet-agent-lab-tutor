@@ -18,6 +18,30 @@ public sealed class GuiToolsTests
     }
 
     [Fact]
+    public async Task OpenPage_ExternalHttpUrl_ReturnsClearMessage()
+    {
+        var memory = new InMemorySessionMemory();
+        await using var tools = new GuiTools(memory);
+
+        var result = await tools.OpenPage("https://example.com");
+
+        Assert.Contains("不在允许范围内", result);
+        Assert.Null(memory.GetWorkState().LastGuiObservation);
+    }
+
+    [Fact]
+    public async Task OpenPage_NonHtmlFileUrl_ReturnsClearMessage()
+    {
+        var memory = new InMemorySessionMemory();
+        await using var tools = new GuiTools(memory);
+
+        var result = await tools.OpenPage(new Uri(Path.Combine(Path.GetTempPath(), "secret.txt")).AbsoluteUri);
+
+        Assert.Contains("不在允许范围内", result);
+        Assert.Null(memory.GetWorkState().LastGuiObservation);
+    }
+
+    [Fact]
     public async Task InspectPage_BeforeOpen_ReturnsClearMessage()
     {
         await using var tools = new GuiTools(new InMemorySessionMemory());

@@ -16,9 +16,9 @@
 | Tool | 输入 | 输出 | 作用 |
 |------|------|------|------|
 | `SearchCourseDocs` | `query`、`topK` | 文档片段、来源、章节、`chunkId`、分数 | 根据学生问题检索课程知识库 |
-| `GetDocSection` | `chunkId` | 完整片段和引用来源 | 展开某个已命中的文档块 |
+| `GetDocSection` | `chunkId`或`.md`文件名 | 完整片段/完整Markdown文档和引用来源 | 展开某个已命中的文档块，或读取知识库文件 |
 | `ListTopics` | 无 | 知识库主题列表 | 告诉学生当前Agent能回答哪些内容 |
-| `OpenPage` | `url` | 页面标题、URL、HTTP状态 | 打开Web/本地GUI页面 |
+| `OpenPage` | `url` | 页面标题、URL、HTTP状态 | 打开localhost页面或本地HTML页面 |
 | `InspectPage` | `maxTextLength` | 页面标题、URL、可见文本 | 观察GUI状态和错误信息 |
 | `TakeScreenshot` | `fileName` | 截图绝对路径 | 为Demo和答辩保存界面证据 |
 | `FillInput` | `locator`、`value` | 填写结果 | 在页面输入问题或表单内容 |
@@ -36,7 +36,7 @@ C阶段主要负责把A阶段的MockTool替换成真实Tool。
 当Agent在ReAct循环中决定调用Action时，`SearchCourseDocs`会把学生问题交给RAG检索，返回带`chunkId`、来源文件、章节名和相似度分数的证据。  
 如果用户继续追问某个结果，`GetDocSection`可以根据`chunkId`展开完整片段。  
 `ListTopics`用于回答“这个助教能问什么”，让Demo更稳定。
-除此之外，我还把GUIAgent作为独立ToolProvider外挂到同一个ReAct循环里。它不改变原有AgentLoop，但可以通过Playwright打开页面、填写输入框、点击按钮、等待结果、读取可见文本和截图。这样Agent不仅能引用文档证据，还能把真实界面状态和操作轨迹作为GuiObservation写入工作记忆。
+除此之外，我还把GUIAgent作为独立ToolProvider外挂到同一个ReAct循环里。它不改变原有AgentLoop，但可以通过Playwright打开本机页面、填写输入框、点击按钮、等待结果、读取可见文本和截图。为了避免LLM访问外部网站或任意本地文件，`OpenPage`只允许localhost页面或本地HTML文件。
 
 ---
 
