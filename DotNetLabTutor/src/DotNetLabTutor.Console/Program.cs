@@ -112,7 +112,7 @@ catch (Exception ex)
 static void PrintWelcome()
 {
     Console.WriteLine("============================================================");
-    Console.WriteLine("  .NET 实验助教 Agent  |  A 阶段：Agent 骨架 + Mock Tool");
+    Console.WriteLine("  .NET 实验助教 Agent  |  C 阶段：真实 RAG Tool + GUI Agent 外挂");
     Console.WriteLine("============================================================");
     Console.WriteLine("命令: exit 退出 | clear 清空会话");
     Console.WriteLine("示例: 什么是 ReAct？请帮我列出课程主题。");

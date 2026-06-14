@@ -32,5 +32,7 @@ public sealed class ChatSessionState
 
     public string? CurrentExperiment { get; set; }
 
+    public string? LastGuiObservation { get; set; }
+
     public List<string> RetrievedChunkIds { get; } = [];
 }

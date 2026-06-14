@@ -33,6 +33,7 @@ public sealed class InMemorySessionMemory : ISessionMemory
         _history.Clear();
         _workState.CurrentTopic = null;
         _workState.CurrentExperiment = null;
+        _workState.LastGuiObservation = null;
         _workState.RetrievedChunkIds.Clear();
     }
 }
