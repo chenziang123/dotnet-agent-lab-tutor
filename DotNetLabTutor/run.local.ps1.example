@@ -8,4 +8,15 @@ $env:MIMO_MODEL = "mimo-v2.5-pro"
 Set-Location $PSScriptRoot
 dotnet build
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+# 启动前端 Web 项目（使用 cmd /c 确保环境变量被继承）
+Write-Host "正在启动前端 Web 服务..."
+Start-Process -FilePath "cmd.exe" -ArgumentList "/c set MIMO_API_KEY=$env:MIMO_API_KEY && set MIMO_MODEL=$env:MIMO_MODEL && dotnet run --project src/DotNetLabTutor.Web --no-build" -WindowStyle Normal
+
+# 等待前端启动
+Write-Host "等待前端服务启动..."
+Start-Sleep -Seconds 5
+
+# 启动后端 Console 项目（可选）
+Write-Host "正在启动后端 Console 服务..."
 dotnet run --project src/DotNetLabTutor.Console --no-build
