@@ -1,0 +1,236 @@
+@page "/"
+@using DotNetLabTutor.Web.Services
+@using DotNetLabTutor.Core.Abstractions
+@using Microsoft.AspNetCore.Components
+@using Microsoft.AspNetCore.Components.Web
+@using Microsoft.JSInterop
+@implements IDisposable
+
+@inject ChatService ChatService
+@inject SessionStateService SessionStateService
+@inject IJSRuntime JSRuntime
+
+<div class="chat-header">
+    <h1 class="text-2xl font-bold">.NET 实验助教 Agent</h1>
+    <p class="text-sm opacity-80">智能答疑系统 | 支持 ReAct 推理展示 | 带引用来源</p>
+</div>
+
+<div class="row">
+    <div class="col-lg-8">
+        <div class="chat-messages" id="messagesContainer">
+            @foreach (var message in ChatService.Messages)
+            {
+                <div class="message @(message.IsUser ? "message-user" : "message-assistant")">
+                    <div class="message-content">
+                        <p>@message.Content</p>
+                    </div>
+                </div>
+                @if (!message.IsUser && !string.IsNullOrEmpty(message.References))
+                {
+                    <div class="message-assistant">
+                        <div class="message-references">
+                            <strong>参考来源：</strong>@message.References
+                        </div>
+                    </div>
+                }
+            }
+            @if (isLoading)
+            {
+                <div class="message message-assistant">
+                    <div class="message-content">
+                        <span class="streaming-text">正在思考...</span>
+                    </div>
+                </div>
+            }
+        </div>
+
+        <div class="chat-input">
+            <div class="d-flex">
+                <textarea 
+                    class="flex-grow-1 me-3" 
+                    rows="3" 
+                    placeholder="输入你的问题，例如：什么是 ReAct？"
+                    @bind="userInput"
+                    @onkeydown="HandleKeyDown"
+                    disabled="@isLoading">
+                </textarea>
+                <button 
+                    type="button"
+                    class="send-button" 
+                    @onclick="SendMessage"
+                    disabled="@(isLoading || string.IsNullOrWhiteSpace(userInput))">
+                    @if (isLoading)
+                    {
+                        <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                        <span class="sr-only">发送中...</span>
+                    }
+                    else
+                    {
+                        <span>发送</span>
+                    }
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-4">
+        <div class="sidebar">
+            <div class="sidebar-title">会话状态</div>
+            <div class="sidebar-item">
+                <div class="sidebar-label">当前主题</div>
+                <div class="sidebar-value">@SessionStateService.CurrentTopic</div>
+            </div>
+            <div class="sidebar-item">
+                <div class="sidebar-label">当前实验</div>
+                <div class="sidebar-value">@SessionStateService.CurrentExperiment</div>
+            </div>
+            <div class="sidebar-item">
+                <div class="sidebar-label">已检索 Chunk</div>
+                <div class="sidebar-value">@SessionStateService.RetrievedChunkIds.Count 个</div>
+            </div>
+            <button class="btn btn-sm btn-danger w-100 mt-3" @onclick="ClearSession">
+                清空会话
+            </button>
+        </div>
+
+        <div class="sidebar mt-4">
+            <div class="sidebar-title">快速问题</div>
+            @foreach (var question in quickQuestions)
+            {
+                <button 
+                    class="btn btn-sm btn-outline-primary w-100 mb-2 text-left" 
+                    @onclick="() => SendQuickQuestion(question)">
+                    @question
+                </button>
+            }
+        </div>
+    </div>
+</div>
+
+@if (showStepLogs)
+{
+    <div class="step-logs">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h3 class="sidebar-title">推理步骤</h3>
+            <button class="btn btn-sm btn-secondary" @onclick="() => showStepLogs = false">隐藏</button>
+        </div>
+        <StepLogsComponent StepLogs="@currentStepLogs" />
+    </div>
+}
+
+@code {
+    private string userInput = "";
+    private bool isLoading = false;
+    private List<AgentStepLog> currentStepLogs = new();
+    private bool showStepLogs = false;
+
+    private List<string> quickQuestions = new()
+    {
+        "什么是 ReAct？",
+        "请列出课程主题",
+        "SemanticKernelAgentFramework是什么？",
+        "ToolCalling在Agent里有什么作用？"
+    };
+
+    protected override void OnInitialized()
+    {
+        // 订阅消息变化事件
+        ChatService.OnMessagesChanged += StateHasChanged;
+    }
+
+    public void Dispose()
+    {
+        // 取消订阅
+        ChatService.OnMessagesChanged -= StateHasChanged;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await ScrollToBottom();
+        }
+    }
+
+    private async Task HandleKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !e.ShiftKey)
+        {
+            await SendMessage();
+        }
+    }
+
+    private async Task SendMessage()
+    {
+        if (string.IsNullOrWhiteSpace(userInput) || isLoading) return;
+
+        isLoading = true;
+        var input = userInput.Trim();
+        userInput = "";
+        StateHasChanged();
+
+        ChatService.AddMessage(input, true);
+        await ScrollToBottom();
+
+        try
+        {
+            var result = await ChatService.SendMessageAsync(input);
+            
+            currentStepLogs = result.StepLogs.ToList();
+            showStepLogs = result.StepLogs.Any();
+            
+            var references = ExtractReferences(result.Answer);
+            ChatService.AddMessage(result.Answer, false, references);
+
+            await SessionStateService.UpdateStateAsync();
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            ChatService.AddMessage($"错误：{ex.Message}", false);
+            StateHasChanged();
+        }
+        finally
+        {
+            isLoading = false;
+            await ScrollToBottom();
+            StateHasChanged();
+        }
+    }
+
+    private void SendQuickQuestion(string question)
+    {
+        userInput = question;
+        _ = SendMessage();
+    }
+
+    private async Task ClearSession()
+    {
+        await ChatService.ClearSessionAsync();
+        await SessionStateService.UpdateStateAsync();
+        currentStepLogs.Clear();
+        showStepLogs = false;
+    }
+
+    private async Task ScrollToBottom()
+    {
+        await Task.Delay(100);
+        await JSRuntime.InvokeVoidAsync("scrollToBottom");
+    }
+
+    private string ExtractReferences(string answer)
+    {
+        var lines = answer.Split('\n');
+        var references = new List<string>();
+        
+        foreach (var line in lines)
+        {
+            if (line.Contains("参考：") || line.Contains("来源：") || line.Contains(".md"))
+            {
+                references.Add(line.Trim());
+            }
+        }
+        
+        return references.Any() ? string.Join(" | ", references) : "";
+    }
+}
