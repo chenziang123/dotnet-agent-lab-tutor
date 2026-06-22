@@ -1,5 +1,7 @@
 using DotNetLabTutor.Core.Abstractions;
+using DotNetLabTutor.Core.Configuration;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 
 namespace DotNetLabTutor.Web.Controllers;
 
@@ -9,11 +11,16 @@ public class AgentController : ControllerBase
 {
     private readonly IAgentService _agentService;
     private readonly ISessionMemory _sessionMemory;
+    private readonly AgentOptions _agentOptions;
 
-    public AgentController(IAgentService agentService, ISessionMemory sessionMemory)
+    public AgentController(
+        IAgentService agentService,
+        ISessionMemory sessionMemory,
+        IOptions<AgentOptions> agentOptions)
     {
         _agentService = agentService;
         _sessionMemory = sessionMemory;
+        _agentOptions = agentOptions.Value;
     }
 
     [HttpPost("chat")]
@@ -55,7 +62,8 @@ public class AgentController : ControllerBase
         {
             CurrentTopic = workState.CurrentTopic,
             CurrentExperiment = workState.CurrentExperiment,
-            RetrievedChunkIds = workState.RetrievedChunkIds
+            RetrievedChunkIds = workState.RetrievedChunkIds,
+            MaxSteps = _agentOptions.MaxSteps
         });
     }
 
