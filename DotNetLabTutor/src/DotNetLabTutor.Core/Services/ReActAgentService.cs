@@ -179,7 +179,8 @@ public sealed class ReActAgentService : IAgentService
 
         var workState = _sessionMemory.GetWorkState();
         if (!string.IsNullOrWhiteSpace(workState.CurrentTopic)
-            || !string.IsNullOrWhiteSpace(workState.CurrentExperiment))
+            || !string.IsNullOrWhiteSpace(workState.CurrentExperiment)
+            || !string.IsNullOrWhiteSpace(workState.LastGuiObservation))
         {
             var context = new StringBuilder("当前会话上下文：");
             if (!string.IsNullOrWhiteSpace(workState.CurrentExperiment))
@@ -190,6 +191,11 @@ public sealed class ReActAgentService : IAgentService
             if (!string.IsNullOrWhiteSpace(workState.CurrentTopic))
             {
                 context.Append($" 主题={workState.CurrentTopic};");
+            }
+
+            if (!string.IsNullOrWhiteSpace(workState.LastGuiObservation))
+            {
+                context.Append($" 最近GUI观察={workState.LastGuiObservation};");
             }
 
             messages.Add(new ChatMessage(ChatRole.System, context.ToString()));

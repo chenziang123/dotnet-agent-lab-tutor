@@ -1,0 +1,47 @@
+@using DotNetLabTutor.Core.Abstractions
+
+<div class="step-logs-content">
+    @foreach (var log in StepLogs)
+    {
+        <div class="step-log">
+            <div class="d-flex align-items-center mb-2">
+                <span class="badge-step @(log.IsFinalAnswer ? "badge-final" : "")">
+                    Step @log.Step
+                </span>
+                @if (log.IsFinalAnswer)
+                {
+                    <span class="text-success text-sm font-weight-bold">最终回答</span>
+                }
+            </div>
+            
+            @if (!string.IsNullOrWhiteSpace(log.Thought))
+            {
+                <div class="step-thought">
+                    <strong>💡 Thought：</strong>
+                    <p>@log.Thought</p>
+                </div>
+            }
+            
+            @if (!string.IsNullOrWhiteSpace(log.Action))
+            {
+                <div class="step-action">
+                    <strong>⚡ Action：</strong>
+                    <p>@log.Action</p>
+                </div>
+            }
+            
+            @if (!string.IsNullOrWhiteSpace(log.Observation))
+            {
+                <div class="step-observation">
+                    <strong>📋 Observation：</strong>
+                    <p>@log.Observation</p>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter]
+    public List<AgentStepLog> StepLogs { get; set; } = new();
+}
