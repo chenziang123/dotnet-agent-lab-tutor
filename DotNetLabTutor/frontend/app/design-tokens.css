@@ -1,0 +1,146 @@
+/*
+ * 设计令牌 —— 纯 CSS 文件（不含任何 Tailwind 指令）。
+ * 放在独立文件可避免 Tailwind v4 对未被 utility 引用的 :root 变量做 tree-shaking。
+ * 这里同时覆盖 shadcn 标准语义令牌（--background 等）与本项目自定义令牌。
+ */
+
+:root {
+  color-scheme: light;
+
+  /* 品牌 */
+  --primary: #1d4ed8;
+  --primary-hover: #1e40af;
+  --primary-muted: #dbeafe;
+
+  /* 背景层级 */
+  --bg-page: #f1f5f9;
+  --bg-surface: #ffffff;
+  --bg-elevated: #ffffff;
+  --bg-subtle: #f8fafc;
+
+  /* 文字 */
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-muted: #94a3b8;
+  --text-inverse: #ffffff;
+
+  /* 边框 */
+  --border: #e2e8f0;
+  --border-strong: #cbd5e1;
+
+  /* 语义色 */
+  --success: #16a34a;
+  --warning: #d97706;
+  --error: #dc2626;
+  --info: #0284c7;
+
+  /* 消息气泡 */
+  --bubble-user: #1d4ed8;
+  --bubble-user-text: #ffffff;
+  --bubble-assistant: #ffffff;
+  --bubble-assistant-text: #0f172a;
+
+  /* ReAct 步骤色 */
+  --step-thought-bg: #eff6ff;
+  --step-thought-border: #93c5fd;
+  --step-thought-label: #1d4ed8;
+
+  --step-action-bg: #f5f3ff;
+  --step-action-border: #c4b5fd;
+  --step-action-label: #6d28d9;
+
+  --step-observation-bg: #f0fdf4;
+  --step-observation-border: #86efac;
+  --step-observation-label: #15803d;
+
+  --step-final-ring: #f59e0b;
+
+  /* 引用来源 */
+  --citation-bg: #fffbeb;
+  --citation-border: #fcd34d;
+  --citation-text: #92400e;
+
+  /* 警告条 */
+  --warn-bg: #fef3c7;
+  --warn-border: #fcd34d;
+  --warn-text: #92400e;
+
+  /* 错误消息 */
+  --error-bg: #fef2f2;
+  --error-border: #fecaca;
+  --error-text: #991b1b;
+
+  /* 代码块 */
+  --code-bg: #0f172a;
+  --code-text: #e2e8f0;
+
+  /* 阴影 */
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06);
+  --shadow-md: 0 4px 12px rgba(15, 23, 42, 0.08);
+  --shadow-lg: 0 8px 24px rgba(15, 23, 42, 0.12);
+
+  --radius: 0.625rem;
+
+  /* shadcn 标准语义令牌 —— 指向本设计系统 */
+  --background: var(--bg-page);
+  --foreground: var(--text-primary);
+  --card: var(--bg-surface);
+  --card-foreground: var(--text-primary);
+  --popover: var(--bg-surface);
+  --popover-foreground: var(--text-primary);
+  --primary-foreground: var(--text-inverse);
+  --secondary: var(--bg-subtle);
+  --secondary-foreground: var(--text-primary);
+  --muted: var(--bg-subtle);
+  --muted-foreground: var(--text-muted);
+  --accent: var(--primary-muted);
+  --accent-foreground: var(--primary);
+  --destructive: var(--error);
+  --destructive-foreground: var(--text-inverse);
+  --input: var(--border);
+  --ring: var(--primary);
+}
+
+[data-theme='dark'] {
+  color-scheme: dark;
+
+  --bg-page: #0f172a;
+  --bg-surface: #1e293b;
+  --bg-elevated: #1e293b;
+  --bg-subtle: #334155;
+
+  --text-primary: #f1f5f9;
+  --text-secondary: #cbd5e1;
+  --text-muted: #64748b;
+  --text-inverse: #ffffff;
+
+  --border: #334155;
+  --border-strong: #475569;
+
+  --primary-muted: #1e3a5f;
+
+  --bubble-assistant: #1e293b;
+  --bubble-assistant-text: #f1f5f9;
+
+  --step-thought-bg: #1e3a5f;
+  --step-thought-border: #1d4ed8;
+  --step-action-bg: #2e1065;
+  --step-action-border: #6d28d9;
+  --step-observation-bg: #14532d;
+  --step-observation-border: #15803d;
+
+  --citation-bg: #422006;
+  --citation-border: #b45309;
+  --citation-text: #fcd34d;
+
+  --warn-bg: #422006;
+  --warn-border: #b45309;
+  --warn-text: #fcd34d;
+
+  --error-bg: #450a0a;
+  --error-border: #7f1d1d;
+  --error-text: #fca5a5;
+
+  --code-bg: #020617;
+  --code-text: #e2e8f0;
+}

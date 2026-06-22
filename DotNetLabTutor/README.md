@@ -12,32 +12,33 @@
 ## 环境要求
 
 - .NET 10 SDK
-- LLM API Key（推荐MiMo，与课程练习一致）
+- Node.js 18+ 与 npm（用于 Web 前端）
+- LLM API Key（推荐 MiMo，与课程练习一致）
 
 ## 配置（本组 MiMo 按量付费 `sk-` Key）
 
 1. 复制 `run.local.ps1.example` 为 `run.local.ps1`
 2. 在 `run.local.ps1` 中填入本组 `sk-` 密钥（**勿提交 Git**）
-3. 运行：`.\run.local.ps1`
+3. 一键启动 Web 界面：`.\run.local.ps1`（会同时拉起后端 API 与 Next.js 前端）
 
-或手动设置环境变量：
+或手动设置环境变量后分别启动（见下方「Web 界面运行」）。
 
 ```powershell
-$env:MIMO_API_KEY = "sk-你的密钥"   # 本组按量付费Key
+$env:MIMO_API_KEY = "sk-你的密钥"   # 本组按量付费 Key
 $env:MIMO_MODEL = "mimo-v2.5-pro"    # 可选
-dotnet build
-dotnet run --project src/DotNetLabTutor.Console --no-build
 ```
 
 | 环境变量 | 说明 |
 |----------|------|
-| `MIMO_API_KEY` | 本组MiMoKey（`sk-`按量付费，程序自动选端点） |
+| `MIMO_API_KEY` | 本组 MiMo Key（`sk-` 按量付费，程序自动选端点） |
 | `MIMO_MODEL` | 模型名，默认 `mimo-v2.5-pro` |
 | `MIMO_BASE_URL` | 一般不需要；`sk-` → api.xiaomimimo.com，`tp-` → token-plan-cn |
 
-详细说明见 [`docs/team-api-setup.md`](docs/team-api-setup.md)。
+详细说明见 [`docs/team-api-setup.md`](../docs/team-api-setup.md)。
 
 ## 构建与运行
+
+### 控制台模式
 
 ```powershell
 cd DotNetLabTutor
@@ -45,15 +46,93 @@ dotnet build
 dotnet run --project src/DotNetLabTutor.Console
 ```
 
-### Web界面运行
+### Web 界面运行（推荐）
+
+Web 界面由 **Next.js 前端** + **ASP.NET 后端 API** 两部分组成，需各开一个终端。
+
+**架构：**
+
+| 组件 | 目录 | 端口 | 说明 |
+|------|------|------|------|
+| 前端 | `frontend/` | 3000 | Next.js 聊天界面，开发时通过代理访问后端 |
+| 后端 | `src/DotNetLabTutor.Web/` | 5203 | ReAct Agent + RAG + REST API |
+
+**方式一：一键脚本**
 
 ```powershell
 cd DotNetLabTutor
-$env:MIMO_API_KEY = "sk-你的密钥"
-dotnet run --project src/DotNetLabTutor.Web
+# 确保 run.local.ps1 中已配置 MIMO_API_KEY
+.\run.local.ps1
 ```
 
-访问 http://localhost:5203 查看Web界面。
+脚本会依次启动后端（5203）与前端（3000），浏览器访问 **http://localhost:3000**。
+
+**方式二：手动双终端**
+
+```powershell
+# ── 终端 1：后端 API ──
+cd DotNetLabTutor
+$env:MIMO_API_KEY = "sk-你的密钥"
+$env:MIMO_MODEL = "mimo-v2.5-pro"
+dotnet run --project src/DotNetLabTutor.Web
+# 看到 Now listening on: http://localhost:5203 即成功
+
+# ── 终端 2：Next.js 前端 ──
+cd DotNetLabTutor/frontend
+npm install          # 首次运行需要
+npm run dev
+# 看到 Local: http://localhost:3000 即成功
+```
+
+浏览器打开 **http://localhost:3000** 使用聊天界面。
+
+**前端常用命令：**
+
+```powershell
+cd frontend
+npm run dev      # 开发模式（热更新）
+npm run build    # 生产构建
+npm run start    # 运行构建产物（需先 build）
+```
+
+**API 端点（后端直连，供调试）：**
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/api/agent/chat` | 发送问题，返回 Agent 回答与推理日志 |
+| POST | `/api/agent/clear` | 清空会话 |
+| GET | `/api/agent/session` | 获取会话状态 |
+| GET | `/api/agent/topics` | 获取课程文档列表 |
+
+前端开发模式下，`/api/*` 会自动代理到 `http://localhost:5203`（见 `frontend/next.config.mjs`）。
+
+### 常见问题
+
+**1. `dotnet run` 提示 exe 被占用**
+
+旧的后端进程未退出，先结束再启动：
+
+```powershell
+Get-Process -Name "DotNetLabTutor.Web" -ErrorAction SilentlyContinue | Stop-Process -Force
+```
+
+**2. `npm run dev` 提示端口 3000 已被占用**
+
+```powershell
+# 结束占用 3000 的 Node 进程后重试
+Get-NetTCPConnection -LocalPort 3000 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }
+npm run dev
+```
+
+**3. 聊天报错「未配置 LLM API Key」**
+
+在**启动后端的同一终端**中设置 `$env:MIMO_API_KEY` 后再运行 `dotnet run`。
+
+**4. 前端能打开但无法对话**
+
+确认后端已在 5203 端口运行，且终端无报错。可在浏览器访问 http://localhost:5203/api/agent/topics 验证 API 是否正常。
+
+> 旧版 Blazor 页面仍保留在 `src/DotNetLabTutor.Web/`，访问 http://localhost:5203 可见，日常请使用 http://localhost:3000。
 
 ## 测试
 
@@ -103,7 +182,11 @@ dotnet-agent-lab-tutor/          # Git仓库根目录
 │   │   ├── DotNetLabTutor.Rag/        # 轻量RAG：切块+TF-IDF检索
 │   │   ├── DotNetLabTutor.Tools/      # 真实CourseTools+GuiTools
 │   │   ├── DotNetLabTutor.Console/    # 控制台入口
-│   │   └── DotNetLabTutor.Web/        # Blazor Web界面
+│   │   └── DotNetLabTutor.Web/        # ASP.NET 后端 API（ReAct + RAG）
+│   ├── frontend/                      # Next.js 聊天界面（主 Web UI）
+│   │   ├── app/                       # 页面与样式
+│   │   ├── components/                # 消息气泡、侧栏、推理步骤等
+│   │   └── lib/                       # API 客户端与类型定义
 │   ├── tests/
 │   │   ├── DotNetLabTutor.Rag.Tests/
 │   │   └── DotNetLabTutor.Tools.Tests/
@@ -164,13 +247,11 @@ dotnet-agent-lab-tutor/          # Git仓库根目录
 ### 成员D — Multi-Agent + UI + 最终交付
 
 **职责：**
-- Multi-Agent流程设计
-- Blazor Web界面开发
-- 引用来源展示
-- 推理步骤可视化
+- Multi-Agent 流程设计
+- Next.js Web 界面开发（聊天、推理步骤、引用来源、侧栏）
 - 架构文档（`docs/architecture.md`）
 - 反思报告（`docs/reflection.md`）
-- README完善
+- README 完善
 
 **交付物：**
 - `docs/architecture.md`
@@ -190,7 +271,8 @@ dotnet-agent-lab-tutor/          # Git仓库根目录
 | `docs/ppt-素材-成员A.md` | A阶段PPT素材 |
 | `docs/ppt-素材-成员B.md` | B阶段PPT素材 |
 | `docs/ppt-素材-成员C.md` | C阶段PPT素材 |
-| `docs/team-api-setup.md` | API配置说明 |
+| `docs/team-api-setup.md` | API 配置说明 |
+| `docs/frontend-design.md` | 前端视觉与交互设计文档 |
 
 ## 成员接力
 
