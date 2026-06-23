@@ -18,6 +18,13 @@ export type AgentRunResult = {
   ReachedStepLimit: boolean
 }
 
+export type ChatStreamEvent = {
+  Type: 'status' | 'step' | 'final' | 'error'
+  Message?: string | null
+  StepLog?: AgentStepLog | null
+  Result?: AgentRunResult | null
+}
+
 export type ApiSessionState = {
   CurrentTopic?: string | null
   CurrentExperiment?: string | null
@@ -54,12 +61,94 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export async function sendChat(
   message: string,
+  onEvent?: (event: ChatStreamEvent) => void,
 ): Promise<{ message: ChatMessage; stepsUsed: number }> {
-  const result = await request<AgentRunResult>('/agent/chat', {
+  const result = await requestChatStream(message, onEvent)
+  return { message: parseAgentResponse(result), stepsUsed: result.StepsUsed }
+}
+
+async function requestChatStream(
+  message: string,
+  onEvent?: (event: ChatStreamEvent) => void,
+): Promise<AgentRunResult> {
+  const res = await fetch(`${API_BASE}/agent/chat/stream`, {
     method: 'POST',
+    headers: {
+      Accept: 'text/event-stream',
+      'Content-Type': 'application/json',
+    },
     body: JSON.stringify({ Message: message }),
   })
-  return { message: parseAgentResponse(result), stepsUsed: result.StepsUsed }
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => '')
+    throw new Error(text || `请求失败 (${res.status})`)
+  }
+
+  if (!res.body) {
+    throw new Error('浏览器不支持流式响应')
+  }
+
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  let finalResult: AgentRunResult | null = null
+
+  while (true) {
+    const { value, done } = await reader.read()
+    if (done) break
+
+    buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, '\n')
+
+    let boundary = buffer.indexOf('\n\n')
+    while (boundary >= 0) {
+      const rawEvent = buffer.slice(0, boundary)
+      buffer = buffer.slice(boundary + 2)
+
+      const event = parseSseEvent(rawEvent)
+      if (event) {
+        onEvent?.(event)
+
+        if (event.Type === 'error') {
+          throw new Error(event.Message || 'Agent 运行失败')
+        }
+
+        if (event.Type === 'final' && event.Result) {
+          finalResult = event.Result
+        }
+      }
+
+      boundary = buffer.indexOf('\n\n')
+    }
+  }
+
+  const tail = parseSseEvent(buffer)
+  if (tail) {
+    onEvent?.(tail)
+    if (tail.Type === 'error') {
+      throw new Error(tail.Message || 'Agent 运行失败')
+    }
+    if (tail.Type === 'final' && tail.Result) {
+      finalResult = tail.Result
+    }
+  }
+
+  if (!finalResult) {
+    throw new Error('流式响应结束但未收到最终回答')
+  }
+
+  return finalResult
+}
+
+function parseSseEvent(rawEvent: string): ChatStreamEvent | null {
+  const data = rawEvent
+    .split('\n')
+    .filter((line) => line.startsWith('data:'))
+    .map((line) => line.slice(5).trimStart())
+    .join('\n')
+
+  if (!data) return null
+  return JSON.parse(data) as ChatStreamEvent
 }
 
 export async function clearSession(): Promise<void> {

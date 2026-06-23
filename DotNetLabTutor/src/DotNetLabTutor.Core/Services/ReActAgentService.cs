@@ -1,4 +1,7 @@
+using System.Net;
+using System.Runtime.CompilerServices;
 using System.Text;
+using System.Text.RegularExpressions;
 using DotNetLabTutor.Core.Abstractions;
 using DotNetLabTutor.Core.Configuration;
 using DotNetLabTutor.Core.Prompts;
@@ -11,7 +14,7 @@ namespace DotNetLabTutor.Core.Services;
 /// <summary>
 /// ReAct 风格 Agent 循环：Thought → Action → Observation，直到产生最终回答或达到步数上限。
 /// </summary>
-public sealed class ReActAgentService : IAgentService
+public sealed partial class ReActAgentService : IAgentService
 {
     private readonly IChatClientFactory _chatClientFactory;
     private readonly ISessionMemory _sessionMemory;
@@ -40,6 +43,27 @@ public sealed class ReActAgentService : IAgentService
         string userMessage,
         CancellationToken cancellationToken = default)
     {
+        AgentRunResult? result = null;
+        await foreach (var streamEvent in StreamAsync(userMessage, cancellationToken))
+        {
+            if (streamEvent.Result is not null)
+            {
+                result = streamEvent.Result;
+            }
+        }
+
+        return result ?? new AgentRunResult
+        {
+            Answer = "Agent 未返回最终回答。",
+            StepsUsed = 0,
+            StepLogs = [],
+        };
+    }
+
+    public async IAsyncEnumerable<AgentStreamEvent> StreamAsync(
+        string userMessage,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
         _sessionMemory.AddUserMessage(userMessage);
 
         var messages = BuildMessages(userMessage);
@@ -53,6 +77,11 @@ public sealed class ReActAgentService : IAgentService
         {
             _logger.LogInformation("[AgentStep] Step {Step} — 调用 LLM 推理", step);
             LogToConsole($"[Step {step}] Thought: 正在分析并决定下一步...");
+            yield return new AgentStreamEvent
+            {
+                Type = "status",
+                Message = $"第 {step} 步：正在调用 LLM 推理...",
+            };
 
             ChatResponse response;
             try
@@ -79,6 +108,11 @@ public sealed class ReActAgentService : IAgentService
             if (!string.IsNullOrWhiteSpace(thought))
             {
                 LogToConsole($"[Step {step}] Thought: {thought}");
+                yield return new AgentStreamEvent
+                {
+                    Type = "status",
+                    Message = thought,
+                };
             }
 
             messages.AddRange(response.Messages);
@@ -86,24 +120,86 @@ public sealed class ReActAgentService : IAgentService
             var toolCalls = assistantContents.OfType<FunctionCallContent>().ToList();
             if (toolCalls.Count == 0)
             {
+                var textToolCall = TryParseTextToolCall(thought);
+                if (textToolCall is not null)
+                {
+                    var actionText = FormatAction(textToolCall);
+                    LogToConsole($"[Step {step}] Action: {actionText}");
+                    _logger.LogInformation("[AgentStep] Text tool call fallback: {Action}", actionText);
+                    yield return new AgentStreamEvent
+                    {
+                        Type = "status",
+                        Message = $"正在执行工具：{actionText}",
+                    };
+
+                    string observation;
+                    try
+                    {
+                        var toolResult = await InvokeToolAsync(textToolCall, cancellationToken);
+                        observation = toolResult ?? "（工具无返回）";
+                    }
+                    catch (Exception ex)
+                    {
+                        observation = $"工具执行失败: {ex.Message}";
+                        _logger.LogWarning(ex, "[AgentStep] Text tool call failed: {Tool}", textToolCall.Name);
+                    }
+
+                    LogToConsole($"[Step {step}] Observation: {observation}");
+                    _logger.LogInformation("[AgentStep] Observation: {Observation}", observation);
+
+                    var stepLog = new AgentStepLog
+                    {
+                        Step = step,
+                        Thought = RemoveTextToolCallMarkup(thought) ?? BuildActionIntent(actionText),
+                        Action = actionText,
+                        Observation = observation,
+                    };
+                    stepLogs.Add(stepLog);
+                    yield return new AgentStreamEvent
+                    {
+                        Type = "step",
+                        StepLog = stepLog,
+                    };
+
+                    messages.Add(new ChatMessage(
+                        ChatRole.System,
+                        $"""
+                        工具调用已执行。
+                        Action: {actionText}
+                        Observation:
+                        {observation}
+
+                        请根据 Observation 继续推理或给出最终回答，不要把 <tool_call> 标签当作最终答案输出。
+                        """));
+                    continue;
+                }
+
                 var answer = thought ?? "（模型未返回文本内容）";
-                stepLogs.Add(new AgentStepLog
+                var finalStepLog = new AgentStepLog
                 {
                     Step = step,
                     Thought = thought,
                     IsFinalAnswer = true,
-                });
+                };
+                stepLogs.Add(finalStepLog);
 
                 _sessionMemory.AddAssistantMessage(answer);
                 _logger.LogInformation("[AgentStep] Step {Step} — 任务完成", step);
 
-                return new AgentRunResult
+                var result = new AgentRunResult
                 {
                     Answer = answer,
                     StepsUsed = step,
                     StepLogs = stepLogs,
                     ReachedStepLimit = false,
                 };
+                yield return new AgentStreamEvent
+                {
+                    Type = "final",
+                    StepLog = finalStepLog,
+                    Result = result,
+                };
+                yield break;
             }
 
             foreach (var toolCall in toolCalls)
@@ -111,6 +207,11 @@ public sealed class ReActAgentService : IAgentService
                 var actionText = FormatAction(toolCall);
                 LogToConsole($"[Step {step}] Action: {actionText}");
                 _logger.LogInformation("[AgentStep] Action: {Action}", actionText);
+                yield return new AgentStreamEvent
+                {
+                    Type = "status",
+                    Message = $"正在执行工具：{actionText}",
+                };
 
                 string observation;
                 try
@@ -127,13 +228,19 @@ public sealed class ReActAgentService : IAgentService
                 LogToConsole($"[Step {step}] Observation: {observation}");
                 _logger.LogInformation("[AgentStep] Observation: {Observation}", observation);
 
-                stepLogs.Add(new AgentStepLog
+                var stepLog = new AgentStepLog
                 {
                     Step = step,
                     Thought = thought ?? BuildActionIntent(actionText),
                     Action = actionText,
                     Observation = observation,
-                });
+                };
+                stepLogs.Add(stepLog);
+                yield return new AgentStreamEvent
+                {
+                    Type = "step",
+                    StepLog = stepLog,
+                };
 
                 messages.Add(new ChatMessage(
                     ChatRole.Tool,
@@ -144,12 +251,17 @@ public sealed class ReActAgentService : IAgentService
         var finalAnswer = await SynthesizeFinalAnswerAsync(messages, stepLogs, cancellationToken);
         _sessionMemory.AddAssistantMessage(finalAnswer);
 
-        return new AgentRunResult
+        var finalResult = new AgentRunResult
         {
             Answer = finalAnswer,
             StepsUsed = _agentOptions.MaxSteps,
             StepLogs = stepLogs,
             ReachedStepLimit = true,
+        };
+        yield return new AgentStreamEvent
+        {
+            Type = "final",
+            Result = finalResult,
         };
     }
 
@@ -294,6 +406,20 @@ public sealed class ReActAgentService : IAgentService
         return result?.ToString();
     }
 
+    private async Task<string?> InvokeToolAsync(
+        TextToolCall toolCall,
+        CancellationToken cancellationToken)
+    {
+        var tool = _tools.FirstOrDefault(t => t.Name == toolCall.Name)
+            ?? throw new InvalidOperationException($"未找到工具: {toolCall.Name}");
+
+        var args = toolCall.Arguments.Count == 0
+            ? null
+            : new AIFunctionArguments(toolCall.Arguments.ToDictionary(kv => kv.Key, kv => kv.Value));
+        var result = await tool.InvokeAsync(args, cancellationToken);
+        return result?.ToString();
+    }
+
     private static string FormatAction(FunctionCallContent toolCall)
     {
         var args = toolCall.Arguments is null
@@ -301,6 +427,57 @@ public sealed class ReActAgentService : IAgentService
             : string.Join(", ", toolCall.Arguments.Select(kv => $"{kv.Key}={kv.Value}"));
 
         return $"{toolCall.Name}({args})";
+    }
+
+    private static string FormatAction(TextToolCall toolCall)
+    {
+        var args = toolCall.Arguments.Count == 0
+            ? "{}"
+            : string.Join(", ", toolCall.Arguments.Select(kv => $"{kv.Key}={kv.Value}"));
+
+        return $"{toolCall.Name}({args})";
+    }
+
+    private TextToolCall? TryParseTextToolCall(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return null;
+        }
+
+        var match = TextToolCallRegex().Match(text);
+        if (!match.Success)
+        {
+            return null;
+        }
+
+        var requestedName = match.Groups["name"].Value;
+        var tool = _tools.FirstOrDefault(t => t.Name.Equals(requestedName, StringComparison.Ordinal));
+        if (tool is null)
+        {
+            return null;
+        }
+
+        var arguments = new Dictionary<string, object?>(StringComparer.Ordinal);
+        foreach (Match parameter in TextToolParameterRegex().Matches(match.Groups["body"].Value))
+        {
+            var name = parameter.Groups["name"].Value;
+            var value = WebUtility.HtmlDecode(parameter.Groups["value"].Value).Trim();
+            arguments[name] = value;
+        }
+
+        return new TextToolCall(tool.Name, arguments);
+    }
+
+    private static string? RemoveTextToolCallMarkup(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return null;
+        }
+
+        var cleaned = TextToolCallRegex().Replace(text, string.Empty).Trim();
+        return string.IsNullOrWhiteSpace(cleaned) ? null : cleaned;
     }
 
     private static string BuildActionIntent(string actionText)
@@ -327,4 +504,16 @@ public sealed class ReActAgentService : IAgentService
             Console.WriteLine(message);
         }
     }
+
+    private sealed record TextToolCall(string Name, IReadOnlyDictionary<string, object?> Arguments);
+
+    [GeneratedRegex(
+        @"<tool_call>\s*<function\s*=\s*(?<name>[A-Za-z_][A-Za-z0-9_]*)\s*>(?<body>.*?)</function>\s*</tool_call>",
+        RegexOptions.IgnoreCase | RegexOptions.Singleline)]
+    private static partial Regex TextToolCallRegex();
+
+    [GeneratedRegex(
+        @"<parameter\s*=\s*(?<name>[A-Za-z_][A-Za-z0-9_]*)\s*>(?<value>.*?)</parameter>",
+        RegexOptions.IgnoreCase | RegexOptions.Singleline)]
+    private static partial Regex TextToolParameterRegex();
 }

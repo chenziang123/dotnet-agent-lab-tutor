@@ -6,6 +6,9 @@ import { ReasoningSteps } from './reasoning-steps'
 import { StepLimitWarning } from './step-limit-warning'
 
 export function MessageBubble({ message }: { message: ChatMessage }) {
+  const hasCitations = (message.citations?.length ?? 0) > 0
+  const hasSteps = (message.steps?.length ?? 0) > 0
+
   if (message.role === 'user') {
     return (
       <div className="flex justify-end">
@@ -57,14 +60,14 @@ export function MessageBubble({ message }: { message: ChatMessage }) {
           </div>
         )}
 
-        <MarkdownContent content={message.content} />
+        {message.content && <MarkdownContent content={message.content} />}
 
-        {(message.citations?.length || message.steps?.length) && (
+        {(hasCitations || hasSteps) && (
           <div className="mt-3 flex flex-col gap-3">
-            {message.citations && message.citations.length > 0 && (
+            {hasCitations && message.citations && (
               <CitationBlock citations={message.citations} />
             )}
-            {message.steps && message.steps.length > 0 && (
+            {hasSteps && message.steps && (
               <ReasoningSteps steps={message.steps} />
             )}
           </div>

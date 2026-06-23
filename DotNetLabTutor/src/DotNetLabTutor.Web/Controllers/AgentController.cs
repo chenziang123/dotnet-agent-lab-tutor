@@ -1,3 +1,4 @@
+using System.Text.Json;
 using DotNetLabTutor.Core.Abstractions;
 using DotNetLabTutor.Core.Configuration;
 using Microsoft.AspNetCore.Mvc;
@@ -12,6 +13,10 @@ public class AgentController : ControllerBase
     private readonly IAgentService _agentService;
     private readonly ISessionMemory _sessionMemory;
     private readonly AgentOptions _agentOptions;
+    private static readonly JsonSerializerOptions SseJsonOptions = new()
+    {
+        PropertyNamingPolicy = null
+    };
 
     public AgentController(
         IAgentService agentService,
@@ -45,6 +50,85 @@ public class AgentController : ControllerBase
                 StepLogs = []
             });
         }
+    }
+
+    [HttpPost("chat/stream")]
+    public async Task ChatStream([FromBody] ChatRequest request, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.Message))
+        {
+            Response.StatusCode = StatusCodes.Status400BadRequest;
+            await Response.WriteAsync("消息不能为空", cancellationToken);
+            return;
+        }
+
+        Response.StatusCode = StatusCodes.Status200OK;
+        Response.ContentType = "text/event-stream; charset=utf-8";
+        Response.Headers.CacheControl = "no-cache";
+        Response.Headers.Connection = "keep-alive";
+        Response.Headers.Append("X-Accel-Buffering", "no");
+
+        try
+        {
+            await WriteSseEventAsync("status", new AgentStreamEvent
+            {
+                Type = "status",
+                Message = "已收到问题，开始处理..."
+            }, cancellationToken);
+
+            await using var enumerator = _agentService
+                .StreamAsync(request.Message, cancellationToken)
+                .GetAsyncEnumerator(cancellationToken);
+
+            while (true)
+            {
+                var moveNextTask = enumerator.MoveNextAsync().AsTask();
+                while (!moveNextTask.IsCompleted)
+                {
+                    var completed = await Task.WhenAny(
+                        moveNextTask,
+                        Task.Delay(TimeSpan.FromSeconds(10), cancellationToken));
+
+                    if (completed != moveNextTask)
+                    {
+                        await WriteSseCommentAsync("heartbeat", cancellationToken);
+                    }
+                }
+
+                if (!await moveNextTask)
+                {
+                    break;
+                }
+
+                await WriteSseEventAsync(enumerator.Current.Type, enumerator.Current, cancellationToken);
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // 客户端断开连接，无需再写响应。
+        }
+        catch (Exception ex)
+        {
+            await WriteSseEventAsync("error", new AgentStreamEvent
+            {
+                Type = "error",
+                Message = $"Agent 运行失败: {ex.Message}"
+            }, CancellationToken.None);
+        }
+    }
+
+    private async Task WriteSseEventAsync(string eventName, AgentStreamEvent streamEvent, CancellationToken cancellationToken)
+    {
+        var json = JsonSerializer.Serialize(streamEvent, SseJsonOptions);
+        await Response.WriteAsync($"event: {eventName}\n", cancellationToken);
+        await Response.WriteAsync($"data: {json}\n\n", cancellationToken);
+        await Response.Body.FlushAsync(cancellationToken);
+    }
+
+    private async Task WriteSseCommentAsync(string comment, CancellationToken cancellationToken)
+    {
+        await Response.WriteAsync($": {comment}\n\n", cancellationToken);
+        await Response.Body.FlushAsync(cancellationToken);
     }
 
     [HttpPost("clear")]

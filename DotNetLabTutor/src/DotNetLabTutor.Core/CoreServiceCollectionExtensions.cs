@@ -18,7 +18,10 @@ public static class CoreServiceCollectionExtensions
 
         services.TryAddSingleton<ISessionMemory>(_ => new InMemorySessionMemory());
         services.TryAddSingleton<IChatClientFactory, OpenAiCompatibleChatClientFactory>();
-        services.TryAddSingleton<IAgentService, ReActAgentService>();
+        services.TryAddSingleton<ReActAgentService>();
+        services.TryAddSingleton<RetrievalAgentService>();
+        services.TryAddSingleton<TutorAnswerAgentService>();
+        services.TryAddSingleton<IAgentService, MultiAgentOrchestrator>();
 
         return services;
     }

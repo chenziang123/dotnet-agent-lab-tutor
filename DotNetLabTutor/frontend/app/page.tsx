@@ -8,7 +8,7 @@ import { MessageBubble } from '@/components/message-bubble'
 import { EmptyState } from '@/components/empty-state'
 import { InputBar } from '@/components/input-bar'
 import { ThinkingIndicator } from '@/components/thinking-indicator'
-import { clearSession, fetchSessionState, fetchTopics, sendChat } from '@/lib/api'
+import { clearSession, fetchSessionState, fetchTopics, mapStepLogs, sendChat } from '@/lib/api'
 import { initialSession } from '@/lib/mock-data'
 import type { ChatMessage, CourseDoc, SessionState } from '@/lib/types'
 
@@ -51,35 +51,91 @@ export default function Page() {
 
   const handleSend = useCallback(
     async (text: string) => {
+      if (loading) return
+
+      const timestamp = now()
+      const replyId = `a-${Date.now()}`
       const userMsg: ChatMessage = {
         id: `u-${Date.now()}`,
         role: 'user',
         content: text,
-        timestamp: now(),
+        timestamp,
       }
       setMessages((prev) => [...prev, userMsg])
       setLoading(true)
 
       try {
-        const { message: reply, stepsUsed } = await sendChat(text)
-        setMessages((prev) => [...prev, reply])
+        const { message: reply, stepsUsed } = await sendChat(text, (event) => {
+          if (event.Type !== 'step' || !event.StepLog) return
+
+          const streamedStep = mapStepLogs([event.StepLog])[0]
+          setMessages((prev) => {
+            const existing = prev.find((message) => message.id === replyId)
+            if (!existing) {
+              return [
+                ...prev,
+                {
+                  id: replyId,
+                  role: 'assistant',
+                  content: '',
+                  timestamp,
+                  steps: [streamedStep],
+                },
+              ]
+            }
+
+            return prev.map((message) =>
+              message.id === replyId
+                ? { ...message, steps: [...(message.steps ?? []), streamedStep] }
+                : message,
+            )
+          })
+        })
+        setMessages((prev) => {
+          const existing = prev.find((message) => message.id === replyId)
+          if (!existing) {
+            return [...prev, { ...reply, id: replyId, timestamp }]
+          }
+
+          return prev.map((message) =>
+            message.id === replyId
+              ? { ...reply, id: replyId, timestamp: message.timestamp }
+              : message,
+          )
+        })
         await refreshSession(stepsUsed)
       } catch (err) {
         const message = err instanceof Error ? err.message : '请求失败，请稍后重试'
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: `e-${Date.now()}`,
-            role: 'error',
-            content: message,
-            timestamp: now(),
-          },
-        ])
+        setMessages((prev) => {
+          const existing = prev.find((item) => item.id === replyId)
+          if (!existing) {
+            return [
+              ...prev,
+              {
+                id: replyId,
+                role: 'error',
+                content: message,
+                timestamp,
+              },
+            ]
+          }
+
+          return prev.map((item) =>
+            item.id === replyId
+              ? {
+                  id: replyId,
+                  role: 'error',
+                  content: message,
+                  timestamp: item.timestamp,
+                }
+              : item,
+          )
+        })
       } finally {
         setLoading(false)
       }
     },
-    [refreshSession],
+    [loading, refreshSession],
   )
 
   const handleClear = useCallback(async () => {

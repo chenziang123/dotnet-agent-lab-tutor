@@ -3,6 +3,8 @@ namespace DotNetLabTutor.Core.Abstractions;
 public interface IAgentService
 {
     Task<AgentRunResult> RunAsync(string userMessage, CancellationToken cancellationToken = default);
+
+    IAsyncEnumerable<AgentStreamEvent> StreamAsync(string userMessage, CancellationToken cancellationToken = default);
 }
 
 public sealed class AgentRunResult
@@ -27,4 +29,15 @@ public sealed class AgentStepLog
     public string? Observation { get; init; }
 
     public bool IsFinalAnswer { get; init; }
+}
+
+public sealed class AgentStreamEvent
+{
+    public required string Type { get; init; }
+
+    public string? Message { get; init; }
+
+    public AgentStepLog? StepLog { get; init; }
+
+    public AgentRunResult? Result { get; init; }
 }

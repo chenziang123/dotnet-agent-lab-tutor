@@ -21,16 +21,16 @@ public sealed class GuiTools : IAsyncDisposable
         _sessionMemory = sessionMemory;
     }
 
-    [Description("打开本机Web页面或本地HTML文件，供GUIAgent观察页面状态。http/https仅允许localhost，file仅允许.html/.htm。")]
+    [Description("打开本机Web页面、Microsoft Learn页面或本地HTML文件，供GUIAgent观察页面状态。")]
     public async Task<string> OpenPage(
         [Description("要打开的URL，例如http://localhost:5000或file:///C:/demo.html")] string url,
-        [Description("是否使用无头浏览器，默认true")] bool headless = true,
+        [Description("是否使用无头浏览器，默认false")] bool headless = false,
         CancellationToken cancellationToken = default)
     {
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri)
             || !IsAllowedGuiUri(uri))
         {
-            return "GUI观察失败：URL无效或不在允许范围内。仅允许localhost的http/https页面，或本地.html/.htm文件。";
+            return "GUI观察失败：URL无效或不在允许范围内。仅允许localhost、Microsoft Learn相关页面，或本地.html/.htm文件。";
         }
 
         await _gate.WaitAsync(cancellationToken);
@@ -313,6 +313,7 @@ public sealed class GuiTools : IAsyncDisposable
         {
             _browser = await _playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
             {
+                Channel = "msedge",
                 Headless = headless,
             });
         }
@@ -375,7 +376,7 @@ public sealed class GuiTools : IAsyncDisposable
         if (uri.Scheme.Equals(Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase)
             || uri.Scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
         {
-            return uri.IsLoopback;
+            return uri.IsLoopback || IsAllowedMicrosoftLearnHost(uri.Host);
         }
 
         if (uri.Scheme == Uri.UriSchemeFile)
@@ -386,6 +387,18 @@ public sealed class GuiTools : IAsyncDisposable
         }
 
         return false;
+    }
+
+    private static bool IsAllowedMicrosoftLearnHost(string host)
+    {
+        return IsHostOrSubdomain(host, "learn.microsoft.com")
+            || IsHostOrSubdomain(host, "docs.microsoft.com");
+    }
+
+    private static bool IsHostOrSubdomain(string host, string allowedHost)
+    {
+        return host.Equals(allowedHost, StringComparison.OrdinalIgnoreCase)
+            || host.EndsWith($".{allowedHost}", StringComparison.OrdinalIgnoreCase);
     }
 
     private void RememberGuiObservation(string observation)
