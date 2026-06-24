@@ -8,8 +8,9 @@ import { MessageBubble } from '@/components/message-bubble'
 import { EmptyState } from '@/components/empty-state'
 import { InputBar } from '@/components/input-bar'
 import { ThinkingIndicator } from '@/components/thinking-indicator'
-import { clearSession, fetchSessionState, fetchTopics, mapStepLogs, sendChat } from '@/lib/api'
+import { clearSession, fetchSessionState, fetchTopics, sendChat, type ChatStreamEvent } from '@/lib/api'
 import { initialSession } from '@/lib/mock-data'
+import { applyStreamEvent, finalizeStreamMessage } from '@/lib/stream-chat'
 import type { ChatMessage, CourseDoc, SessionState } from '@/lib/types'
 
 function now() {
@@ -21,10 +22,13 @@ export default function Page() {
   const [session, setSession] = useState<SessionState>(initialSession)
   const [courseDocs, setCourseDocs] = useState<CourseDoc[]>([])
   const [loading, setLoading] = useState(false)
+  const [streamingReplyId, setStreamingReplyId] = useState<string | null>(null)
   const [theme, setTheme] = useState<'light' | 'dark'>('light')
   const [drawerOpen, setDrawerOpen] = useState(false)
 
   const listRef = useRef<HTMLDivElement>(null)
+  const pendingEventsRef = useRef<ChatStreamEvent[]>([])
+  const rafIdRef = useRef<number | null>(null)
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme)
@@ -65,50 +69,64 @@ export default function Page() {
         content: text,
         timestamp,
       }
-      setMessages((prev) => [...prev, userMsg])
+      const assistantShell: ChatMessage = {
+        id: replyId,
+        role: 'assistant',
+        content: '',
+        timestamp,
+        isStreaming: true,
+        streamStatus: '正在连接 Agent…',
+        processLog: ['正在连接 Agent…'],
+      }
+      setMessages((prev) => [...prev, userMsg, assistantShell])
       setLoading(true)
+      setStreamingReplyId(replyId)
+      pendingEventsRef.current = []
+      if (rafIdRef.current !== null) {
+        cancelAnimationFrame(rafIdRef.current)
+        rafIdRef.current = null
+      }
+
+      const flushStreamEvents = () => {
+        rafIdRef.current = null
+        const events = pendingEventsRef.current
+        pendingEventsRef.current = []
+        if (events.length === 0) return
+
+        setMessages((prev) =>
+          events.reduce(
+            (next, event) => applyStreamEvent(next, replyId, timestamp, event),
+            prev,
+          ),
+        )
+      }
+
+      const scheduleStreamEvent = (event: ChatStreamEvent) => {
+        if (event.Type === 'delta') {
+          pendingEventsRef.current.push(event)
+          if (rafIdRef.current !== null) return
+          rafIdRef.current = requestAnimationFrame(flushStreamEvents)
+          return
+        }
+
+        setMessages((prev) => applyStreamEvent(prev, replyId, timestamp, event))
+      }
 
       try {
-        const { message: reply, stepsUsed } = await sendChat(text, (event) => {
-          if (event.Type !== 'step' || !event.StepLog) return
-
-          const streamedStep = mapStepLogs([event.StepLog])[0]
-          setMessages((prev) => {
-            const existing = prev.find((message) => message.id === replyId)
-            if (!existing) {
-              return [
-                ...prev,
-                {
-                  id: replyId,
-                  role: 'assistant',
-                  content: '',
-                  timestamp,
-                  steps: [streamedStep],
-                },
-              ]
-            }
-
-            return prev.map((message) =>
-              message.id === replyId
-                ? { ...message, steps: [...(message.steps ?? []), streamedStep] }
-                : message,
-            )
-          })
-        })
-        setMessages((prev) => {
-          const existing = prev.find((message) => message.id === replyId)
-          if (!existing) {
-            return [...prev, { ...reply, id: replyId, timestamp }]
-          }
-
-          return prev.map((message) =>
-            message.id === replyId
-              ? { ...reply, id: replyId, timestamp: message.timestamp }
-              : message,
-          )
-        })
+        const { message: reply, stepsUsed } = await sendChat(text, scheduleStreamEvent)
+        if (rafIdRef.current !== null) {
+          cancelAnimationFrame(rafIdRef.current)
+          rafIdRef.current = null
+        }
+        flushStreamEvents()
+        setMessages((prev) => finalizeStreamMessage(prev, replyId, reply))
         await refreshSession(stepsUsed)
       } catch (err) {
+        if (rafIdRef.current !== null) {
+          cancelAnimationFrame(rafIdRef.current)
+          rafIdRef.current = null
+        }
+        pendingEventsRef.current = []
         const message = err instanceof Error ? err.message : '请求失败，请稍后重试'
         setMessages((prev) => {
           const existing = prev.find((item) => item.id === replyId)
@@ -131,12 +149,15 @@ export default function Page() {
                   role: 'error',
                   content: message,
                   timestamp: item.timestamp,
+                  isStreaming: false,
+                  streamStatus: undefined,
                 }
               : item,
           )
         })
       } finally {
         setLoading(false)
+        setStreamingReplyId(null)
       }
     },
     [loading, refreshSession],
@@ -144,6 +165,7 @@ export default function Page() {
 
   const handleClear = useCallback(async () => {
     setLoading(false)
+    setStreamingReplyId(null)
     setMessages([])
     setSession(initialSession)
     try {
@@ -152,6 +174,11 @@ export default function Page() {
       // 本地已清空，忽略网络错误
     }
   }, [])
+
+  const showThinkingIndicator =
+    loading &&
+    streamingReplyId !== null &&
+    !messages.some((message) => message.id === streamingReplyId)
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-background">
@@ -172,7 +199,7 @@ export default function Page() {
                 {messages.map((m) => (
                   <MessageBubble key={m.id} message={m} />
                 ))}
-                {loading && <ThinkingIndicator />}
+                {showThinkingIndicator && <ThinkingIndicator />}
               </div>
             )}
           </div>

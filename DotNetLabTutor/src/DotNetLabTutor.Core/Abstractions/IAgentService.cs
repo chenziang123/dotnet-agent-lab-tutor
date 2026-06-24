@@ -37,6 +37,8 @@ public sealed class AgentStreamEvent
 
     public string? Message { get; init; }
 
+    public string? Delta { get; init; }
+
     public AgentStepLog? StepLog { get; init; }
 
     public AgentRunResult? Result { get; init; }

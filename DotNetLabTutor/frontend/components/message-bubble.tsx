@@ -4,6 +4,7 @@ import { MarkdownContent } from './markdown-content'
 import { CitationBlock } from './citation-block'
 import { ReasoningSteps } from './reasoning-steps'
 import { StepLimitWarning } from './step-limit-warning'
+import { StreamProcess } from './stream-process'
 
 export function MessageBubble({ message }: { message: ChatMessage }) {
   const hasCitations = (message.citations?.length ?? 0) > 0
@@ -60,7 +61,36 @@ export function MessageBubble({ message }: { message: ChatMessage }) {
           </div>
         )}
 
-        {message.content && <MarkdownContent content={message.content} />}
+        {(message.processLog?.length ?? 0) > 0 && (
+          <StreamProcess lines={message.processLog!} active={message.isStreaming} />
+        )}
+
+        {message.streamStatus && !message.content && !(message.processLog?.length) && (
+          <p className="mb-2 text-[14px] text-[color:var(--text-secondary)]">
+            {message.streamStatus}
+          </p>
+        )}
+
+        {message.content && (
+          <div className="relative">
+            {message.isStreaming ? (
+              <p className="whitespace-pre-wrap text-[15px] leading-[1.65]">{message.content}</p>
+            ) : (
+              <MarkdownContent content={message.content} />
+            )}
+            {message.isStreaming && (
+              <span className="stream-cursor ml-0.5 inline-block" aria-hidden="true">
+                ▍
+              </span>
+            )}
+          </div>
+        )}
+
+        {!message.content && message.isStreaming && !message.streamStatus && (
+          <span className="stream-cursor inline-block text-[color:var(--text-muted)]" aria-hidden="true">
+            ▍
+          </span>
+        )}
 
         {(hasCitations || hasSteps) && (
           <div className="mt-3 flex flex-col gap-3">
@@ -68,7 +98,7 @@ export function MessageBubble({ message }: { message: ChatMessage }) {
               <CitationBlock citations={message.citations} />
             )}
             {hasSteps && message.steps && (
-              <ReasoningSteps steps={message.steps} />
+              <ReasoningSteps steps={message.steps} streaming={message.isStreaming} />
             )}
           </div>
         )}

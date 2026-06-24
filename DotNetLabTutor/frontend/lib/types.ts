@@ -22,6 +22,12 @@ export type ChatMessage = {
   steps?: ReasoningStep[]
   /** 是否触达最大推理步数 */
   reachedStepLimit?: boolean
+  /** 回答是否仍在流式输出中 */
+  isStreaming?: boolean
+  /** 流式阶段的实时状态提示（如「正在检索…」） */
+  streamStatus?: string
+  /** 生成过程日志（状态与步骤摘要，流式追加） */
+  processLog?: string[]
 }
 
 export type SessionState = {

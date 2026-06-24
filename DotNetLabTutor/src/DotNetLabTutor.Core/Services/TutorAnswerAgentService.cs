@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using System.Text;
 using DotNetLabTutor.Core.Abstractions;
 using Microsoft.Extensions.AI;
@@ -59,6 +60,63 @@ public sealed class TutorAnswerAgentService
         }
 
         return answer;
+    }
+
+    public async IAsyncEnumerable<string> StreamGenerateAnswerAsync(
+        string userMessage,
+        RetrievalAgentResult retrieval,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        if (retrieval.Evidence.Count == 0)
+        {
+            yield return "知识库未找到相关内容。请换一个更具体的课程主题或实验关键词再试。";
+            yield break;
+        }
+
+        var messages = BuildMessages(userMessage, retrieval);
+        var answerBuilder = new StringBuilder();
+
+        await foreach (var update in ChatClient.GetStreamingResponseAsync(
+                           messages,
+                           new ChatOptions { Tools = [] },
+                           cancellationToken))
+        {
+            var delta = ExtractTextDelta(update);
+            if (string.IsNullOrEmpty(delta))
+            {
+                continue;
+            }
+
+            answerBuilder.Append(delta);
+            yield return delta;
+        }
+
+        if (answerBuilder.Length == 0)
+        {
+            foreach (var chunk in AnswerStreamEmitter.CreateDeltaEvents(BuildFallbackAnswer(retrieval)))
+            {
+                if (!string.IsNullOrEmpty(chunk.Delta))
+                {
+                    yield return chunk.Delta;
+                }
+            }
+        }
+    }
+
+    private static string? ExtractTextDelta(ChatResponseUpdate update)
+    {
+        if (!string.IsNullOrEmpty(update.Text))
+        {
+            return update.Text;
+        }
+
+        var textParts = update.Contents?
+            .OfType<TextContent>()
+            .Select(content => content.Text)
+            .Where(text => !string.IsNullOrEmpty(text))
+            .ToList();
+
+        return textParts is { Count: > 0 } ? string.Concat(textParts) : null;
     }
 
     private List<ChatMessage> BuildMessages(string userMessage, RetrievalAgentResult retrieval)

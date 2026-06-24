@@ -186,6 +186,11 @@ public sealed partial class ReActAgentService : IAgentService
                 _sessionMemory.AddAssistantMessage(answer);
                 _logger.LogInformation("[AgentStep] Step {Step} — 任务完成", step);
 
+                foreach (var deltaEvent in AnswerStreamEmitter.CreateDeltaEvents(answer))
+                {
+                    yield return deltaEvent;
+                }
+
                 var result = new AgentRunResult
                 {
                     Answer = answer,
@@ -250,6 +255,11 @@ public sealed partial class ReActAgentService : IAgentService
 
         var finalAnswer = await SynthesizeFinalAnswerAsync(messages, stepLogs, cancellationToken);
         _sessionMemory.AddAssistantMessage(finalAnswer);
+
+        foreach (var deltaEvent in AnswerStreamEmitter.CreateDeltaEvents(finalAnswer))
+        {
+            yield return deltaEvent;
+        }
 
         var finalResult = new AgentRunResult
         {
