@@ -111,6 +111,17 @@ public class RagServiceTests
     }
 
     [Fact]
+    public async Task SearchAsync_CompoundEnglishQuery_ReturnsResults()
+    {
+        var service = CreateService();
+        await service.InitializeAsync();
+
+        var result = await service.SearchAsync("SemanticKernelAgentFramework是什么？", topK: 3);
+
+        Assert.NotEmpty(result);
+    }
+
+    [Fact]
     public async Task InitializeAsync_CanBeCalledMultipleTimes()
     {
         var service = CreateService();

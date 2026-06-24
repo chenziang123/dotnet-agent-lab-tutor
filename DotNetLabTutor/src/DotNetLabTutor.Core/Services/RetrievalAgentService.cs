@@ -28,13 +28,35 @@ public sealed class RetrievalAgentService
         int topK = 5,
         CancellationToken cancellationToken = default)
     {
-        var evidence = (await _ragService.SearchAsync(userMessage, topK, cancellationToken))
-            .Select(result => new CourseEvidence(
-                result.ChunkId,
-                result.SourceFile,
-                result.Section,
-                result.Score,
-                result.Content))
+        var searchQueries = RetrievalQueryBuilder.BuildSearchQueries(userMessage);
+        if (searchQueries.Count == 0)
+        {
+            searchQueries = [userMessage.Trim()];
+        }
+
+        var merged = new Dictionary<string, (RagSearchResult Result, double Score)>();
+        foreach (var query in searchQueries)
+        {
+            var results = await _ragService.SearchAsync(query, topK, cancellationToken);
+            foreach (var result in results)
+            {
+                if (!merged.TryGetValue(result.ChunkId, out var existing)
+                    || result.Score > existing.Score)
+                {
+                    merged[result.ChunkId] = (result, result.Score);
+                }
+            }
+        }
+
+        var evidence = merged.Values
+            .OrderByDescending(entry => entry.Score)
+            .Take(topK)
+            .Select(entry => new CourseEvidence(
+                entry.Result.ChunkId,
+                entry.Result.SourceFile,
+                entry.Result.Section,
+                entry.Score,
+                entry.Result.Content))
             .ToList();
 
         _sessionMemory.UpdateWorkState(state =>
@@ -55,27 +77,33 @@ public sealed class RetrievalAgentService
         });
 
         _logger.LogInformation(
-            "RetrievalAgent found {Count} evidence chunks for query: {Query}",
+            "RetrievalAgent found {Count} evidence chunks for query: {Query} (tried {QueryCount} variants)",
             evidence.Count,
-            userMessage);
+            userMessage,
+            searchQueries.Count);
 
         return new RetrievalAgentResult(
             userMessage,
             evidence,
-            BuildObservation(userMessage, evidence));
+            BuildObservation(userMessage, searchQueries, evidence));
     }
 
-    private static string BuildObservation(string query, IReadOnlyList<CourseEvidence> evidence)
+    private static string BuildObservation(
+        string query,
+        IReadOnlyList<string> searchQueries,
+        IReadOnlyList<CourseEvidence> evidence)
     {
         if (evidence.Count == 0)
         {
             return $"""
                 检索 Agent：query="{query}"，未命中课程知识库。
+                已尝试检索词：{string.Join(" | ", searchQueries)}
                 """;
         }
 
         var builder = new StringBuilder();
         builder.AppendLine($"检索 Agent：query=\"{query}\"，命中 {evidence.Count} 条课程证据。");
+        builder.AppendLine($"检索词变体：{string.Join(" | ", searchQueries)}");
 
         for (var i = 0; i < evidence.Count; i++)
         {

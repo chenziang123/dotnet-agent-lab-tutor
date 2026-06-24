@@ -156,30 +156,57 @@ public sealed class TfIdfVectorizer
     }
 
     /// <summary>
-    /// 分词：小写、去标点、去停用词、去短词
+    /// 分词：提取英文词、拆分驼峰/连字符、小写、去停用词。
     /// </summary>
     private static List<string> Tokenize(string text)
     {
         if (string.IsNullOrWhiteSpace(text))
             return [];
 
-        // 小写，保留字母数字和连字符
-        var cleaned = text.ToLowerInvariant();
         var tokens = new List<string>();
-
-        // 用正则提取单词
-        var matches = Regex.Matches(cleaned, @"[a-zA-Z0-9]+(?:[-_][a-zA-Z0-9]+)*");
+        var matches = Regex.Matches(text, @"[a-zA-Z0-9]+(?:[-_][a-zA-Z0-9]+)*");
         foreach (Match match in matches)
         {
-            var word = match.Value;
-            if (word.Length >= 2 && !StopWords.Contains(word))
+            foreach (var part in ExpandTokenParts(match.Value))
             {
-                tokens.Add(word);
+                var word = part.ToLowerInvariant();
+                if (word.Length >= 2 && !StopWords.Contains(word))
+                {
+                    tokens.Add(word);
+                }
             }
         }
 
         return tokens;
     }
+
+    private static IEnumerable<string> ExpandTokenParts(string token)
+    {
+        var segments = token.Split('-', '_', StringSplitOptions.RemoveEmptyEntries);
+        foreach (var segment in segments)
+        {
+            if (ContainsCamelCaseBoundary(segment))
+            {
+                foreach (var piece in Regex.Split(
+                             segment,
+                             @"(?<=[a-z])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])"))
+                {
+                    if (piece.Length >= 2)
+                    {
+                        yield return piece;
+                    }
+                }
+            }
+            else if (segment.Length >= 2)
+            {
+                yield return segment;
+            }
+        }
+    }
+
+    private static bool ContainsCamelCaseBoundary(string token)
+        => token.Length > 3
+           && (Regex.IsMatch(token, @"[a-z][A-Z]") || Regex.IsMatch(token, @"[A-Z][a-z]"));
 
     /// <summary>
     /// 计算词频 (Term Frequency)
