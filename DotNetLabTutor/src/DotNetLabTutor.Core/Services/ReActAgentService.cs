@@ -72,6 +72,7 @@ public sealed partial class ReActAgentService : IAgentService
         {
             Tools = [.. _tools.Cast<AITool>()],
         };
+        var guiFailureCount = 0;
 
         for (var step = 1; step <= _agentOptions.MaxSteps; step++)
         {
@@ -161,6 +162,29 @@ public sealed partial class ReActAgentService : IAgentService
                         StepLog = stepLog,
                     };
 
+                    if (ShouldStopAfterGuiFailure(textToolCall.Name, observation, ref guiFailureCount))
+                    {
+                        var failureAnswer = BuildGuiFailureAnswer(observation);
+                        _sessionMemory.AddAssistantMessage(failureAnswer);
+                        foreach (var deltaEvent in AnswerStreamEmitter.CreateDeltaEvents(failureAnswer))
+                        {
+                            yield return deltaEvent;
+                        }
+
+                        yield return new AgentStreamEvent
+                        {
+                            Type = "final",
+                            Result = new AgentRunResult
+                            {
+                                Answer = failureAnswer,
+                                StepsUsed = step,
+                                StepLogs = stepLogs,
+                                ReachedStepLimit = false,
+                            },
+                        };
+                        yield break;
+                    }
+
                     messages.Add(new ChatMessage(
                         ChatRole.System,
                         $"""
@@ -246,6 +270,29 @@ public sealed partial class ReActAgentService : IAgentService
                     Type = "step",
                     StepLog = stepLog,
                 };
+
+                if (ShouldStopAfterGuiFailure(toolCall.Name, observation, ref guiFailureCount))
+                {
+                    var failureAnswer = BuildGuiFailureAnswer(observation);
+                    _sessionMemory.AddAssistantMessage(failureAnswer);
+                    foreach (var deltaEvent in AnswerStreamEmitter.CreateDeltaEvents(failureAnswer))
+                    {
+                        yield return deltaEvent;
+                    }
+
+                    yield return new AgentStreamEvent
+                    {
+                        Type = "final",
+                        Result = new AgentRunResult
+                        {
+                            Answer = failureAnswer,
+                            StepsUsed = step,
+                            StepLogs = stepLogs,
+                            ReachedStepLimit = false,
+                        },
+                    };
+                    yield break;
+                }
 
                 messages.Add(new ChatMessage(
                     ChatRole.Tool,
@@ -366,6 +413,11 @@ public sealed partial class ReActAgentService : IAgentService
             }
             else if (turn.Role.Equals("assistant", StringComparison.OrdinalIgnoreCase))
             {
+                if (IsTransientGuiFailure(turn.Content))
+                {
+                    continue;
+                }
+
                 messages.Add(new ChatMessage(ChatRole.Assistant, turn.Content));
             }
         }
@@ -391,7 +443,8 @@ public sealed partial class ReActAgentService : IAgentService
                 context.Append($" 主题={workState.CurrentTopic};");
             }
 
-            if (!string.IsNullOrWhiteSpace(workState.LastGuiObservation))
+            if (!string.IsNullOrWhiteSpace(workState.LastGuiObservation)
+                && !IsTransientGuiFailure(workState.LastGuiObservation))
             {
                 context.Append($" 最近GUI观察={workState.LastGuiObservation};");
             }
@@ -505,6 +558,65 @@ public sealed partial class ReActAgentService : IAgentService
 
         var toolName = actionText.Split('(')[0];
         return $"调用工具 {toolName} 获取信息。";
+    }
+
+    private static bool ShouldStopAfterGuiFailure(
+        string toolName,
+        string observation,
+        ref int guiFailureCount)
+    {
+        if (!IsGuiTool(toolName))
+        {
+            return false;
+        }
+
+        if (!IsGuiFailure(observation))
+        {
+            guiFailureCount = 0;
+            return false;
+        }
+
+        guiFailureCount++;
+        return guiFailureCount >= 2;
+    }
+
+    private static bool IsGuiTool(string toolName)
+    {
+        return toolName is "OpenPage"
+            or "InspectPage"
+            or "TakeScreenshot"
+            or "FillInput"
+            or "ClickElement"
+            or "WaitForText";
+    }
+
+    private static bool IsGuiFailure(string observation)
+    {
+        return observation.Contains("GUI观察失败", StringComparison.OrdinalIgnoreCase)
+            || observation.Contains("GUI操作失败", StringComparison.OrdinalIgnoreCase)
+            || observation.Contains("GUI截图失败", StringComparison.OrdinalIgnoreCase)
+            || observation.Contains("GUI验证失败", StringComparison.OrdinalIgnoreCase)
+            || observation.Contains("工具执行失败", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsTransientGuiFailure(string content)
+    {
+        return content.Contains("Target page, context or browser has been closed", StringComparison.OrdinalIgnoreCase)
+            || content.Contains("Browser has been closed", StringComparison.OrdinalIgnoreCase)
+            || content.Contains("Target closed", StringComparison.OrdinalIgnoreCase)
+            || content.Contains("浏览器实例已关闭", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string BuildGuiFailureAnswer(string observation)
+    {
+        return $"""
+            GUIAgent连续两次执行失败，本轮已停止继续调用GUI工具，避免重复循环。
+
+            最后一次错误：
+            {observation}
+
+            浏览器关闭类故障会自动清理旧实例。请确认本机Edge可启动后重新发送GUI任务。
+            """;
     }
 
     private void LogToConsole(string message)

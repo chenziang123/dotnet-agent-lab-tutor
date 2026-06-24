@@ -1,4 +1,5 @@
 using DotNetLabTutor.Core.Services;
+using Microsoft.Playwright;
 using Xunit;
 
 namespace DotNetLabTutor.Tools.Tests;
@@ -61,5 +62,16 @@ public sealed class GuiToolsIntegrationTests
         Assert.Contains("DotNetLabTutor GUI Test", inspectResult);
         Assert.Contains("gui-agent-test.png", screenshotResult);
         Assert.Contains("screenshotPath=", memory.GetWorkState().LastGuiObservation);
+
+        var browserField = typeof(GuiTools).GetField(
+            "_browser",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+        var browser = Assert.IsAssignableFrom<IBrowser>(browserField?.GetValue(tools));
+        await browser.CloseAsync();
+
+        var reopenResult = await tools.OpenPage(new Uri(htmlPath).AbsoluteUri, headless: true);
+
+        Assert.Contains("GUI Agent Test", reopenResult);
+        Assert.DoesNotContain("browser has been closed", reopenResult, StringComparison.OrdinalIgnoreCase);
     }
 }

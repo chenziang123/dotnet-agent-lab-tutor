@@ -36,29 +36,19 @@ public sealed class GuiTools : IAsyncDisposable
         await _gate.WaitAsync(cancellationToken);
         try
         {
-            var page = await EnsurePageAsync(headless);
-            var response = await page.GotoAsync(url, new PageGotoOptions
+            try
             {
-                WaitUntil = WaitUntilState.Load,
-                Timeout = 15000,
-            });
-
-            var title = await page.TitleAsync();
-            var status = response?.Status.ToString() ?? "无HTTP状态";
-            var observation = $"pageTitle={title}; url={page.Url}; status={status}";
-            RememberGuiObservation(observation);
-
-            return $"""
-                GUI观察：
-                动作: OpenPage
-                URL: {page.Url}
-                页面标题: {title}
-                HTTP状态: {status}
-                """;
+                return await OpenPageCoreAsync(url, headless);
+            }
+            catch (PlaywrightException ex) when (IsBrowserClosedFailure(ex))
+            {
+                await ResetBrowserAsync();
+                return await OpenPageCoreAsync(url, headless);
+            }
         }
         catch (PlaywrightException ex)
         {
-            return FormatPlaywrightFailure(ex);
+            return await HandlePlaywrightFailureAsync(ex);
         }
         finally
         {
@@ -101,7 +91,7 @@ public sealed class GuiTools : IAsyncDisposable
         }
         catch (PlaywrightException ex)
         {
-            return FormatPlaywrightFailure(ex);
+            return await HandlePlaywrightFailureAsync(ex);
         }
         finally
         {
@@ -145,7 +135,7 @@ public sealed class GuiTools : IAsyncDisposable
         }
         catch (PlaywrightException ex)
         {
-            return FormatPlaywrightFailure(ex);
+            return await HandlePlaywrightFailureAsync(ex);
         }
         finally
         {
@@ -191,7 +181,7 @@ public sealed class GuiTools : IAsyncDisposable
         }
         catch (PlaywrightException ex)
         {
-            return FormatPlaywrightFailure(ex);
+            return await HandlePlaywrightFailureAsync(ex);
         }
         finally
         {
@@ -235,7 +225,7 @@ public sealed class GuiTools : IAsyncDisposable
         }
         catch (PlaywrightException ex)
         {
-            return FormatPlaywrightFailure(ex);
+            return await HandlePlaywrightFailureAsync(ex);
         }
         finally
         {
@@ -286,7 +276,7 @@ public sealed class GuiTools : IAsyncDisposable
         }
         catch (PlaywrightException ex)
         {
-            return FormatPlaywrightFailure(ex);
+            return await HandlePlaywrightFailureAsync(ex);
         }
         finally
         {
@@ -309,6 +299,16 @@ public sealed class GuiTools : IAsyncDisposable
     {
         _playwright ??= await Playwright.CreateAsync();
 
+        if (_browser is not null && !_browser.IsConnected)
+        {
+            await ResetBrowserAsync();
+        }
+
+        if (_page is not null && _page.IsClosed)
+        {
+            _page = null;
+        }
+
         if (_browser is null)
         {
             _browser = await _playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
@@ -320,6 +320,74 @@ public sealed class GuiTools : IAsyncDisposable
 
         _page ??= await _browser.NewPageAsync();
         return _page;
+    }
+
+    private async Task<string> OpenPageCoreAsync(string url, bool headless)
+    {
+        var page = await EnsurePageAsync(headless);
+        var response = await page.GotoAsync(url, new PageGotoOptions
+        {
+            WaitUntil = WaitUntilState.Load,
+            Timeout = 15000,
+        });
+
+        var title = await page.TitleAsync();
+        var status = response?.Status.ToString() ?? "无HTTP状态";
+        var observation = $"pageTitle={title}; url={page.Url}; status={status}";
+        RememberGuiObservation(observation);
+
+        return $"""
+            GUI观察：
+            动作: OpenPage
+            URL: {page.Url}
+            页面标题: {title}
+            HTTP状态: {status}
+            """;
+    }
+
+    private async Task<string> HandlePlaywrightFailureAsync(PlaywrightException ex)
+    {
+        var browserClosed = IsBrowserClosedFailure(ex);
+        if (browserClosed)
+        {
+            await ResetBrowserAsync();
+        }
+
+        var failure = FormatPlaywrightFailure(ex);
+        if (browserClosed)
+        {
+            failure += "；浏览器状态已重置，下次调用OpenPage会创建新实例。";
+        }
+
+        RememberGuiObservation(TrimForMemory(failure));
+        return failure;
+    }
+
+    private async Task ResetBrowserAsync()
+    {
+        _page = null;
+        _sessionMemory.UpdateWorkState(state => state.LastGuiObservation = null);
+
+        if (_browser is not null)
+        {
+            try
+            {
+                await _browser.DisposeAsync();
+            }
+            catch (PlaywrightException)
+            {
+                // 浏览器已经退出时释放可能再次抛出，清空句柄即可。
+            }
+        }
+
+        _browser = null;
+    }
+
+    private static bool IsBrowserClosedFailure(PlaywrightException ex)
+    {
+        return ex.Message.Contains("Target page, context or browser has been closed", StringComparison.OrdinalIgnoreCase)
+            || ex.Message.Contains("Browser has been closed", StringComparison.OrdinalIgnoreCase)
+            || ex.Message.Contains("Target closed", StringComparison.OrdinalIgnoreCase);
     }
 
     private static async Task<string> ReadBodyTextAsync(IPage page)
