@@ -9,6 +9,25 @@ namespace DotNetLabTutor.Rag;
 /// </summary>
 public sealed class TfIdfVectorizer
 {
+    private static readonly (string Phrase, string Expansion)[] QueryAliases =
+    [
+        ("语义内核", "semantic kernel"),
+        ("智能体", "agent"),
+        ("代理", "agent"),
+        ("多智能体", "multi agent collaboration workflow"),
+        ("多代理", "multi agent collaboration workflow"),
+        ("框架", "framework"),
+        ("工具调用", "tool calling"),
+        ("函数调用", "function calling"),
+        ("插件", "plugin"),
+        ("推理", "reasoning"),
+        ("行动", "acting action"),
+        ("配置环境", "configure configuration environment setup install prerequisites sdk"),
+        ("环境配置", "configure configuration environment setup install prerequisites sdk"),
+        ("如何配置", "configure configuration setup prerequisites"),
+        ("安装", "install installation"),
+    ];
+
     private static readonly FrozenSet<string> StopWords = new HashSet<string>
     {
         "a", "an", "the", "and", "or", "but", "in", "on", "at", "to", "for",
@@ -107,7 +126,7 @@ public sealed class TfIdfVectorizer
             return [];
         }
 
-        var queryTokens = Tokenize(query);
+        var queryTokens = Tokenize(NormalizeQuery(query));
         var queryVector = new Dictionary<string, double>();
 
         foreach (var token in queryTokens)
@@ -179,6 +198,21 @@ public sealed class TfIdfVectorizer
         }
 
         return tokens;
+    }
+
+    private static string NormalizeQuery(string query)
+    {
+        var normalized = Regex.Replace(
+            query,
+            @"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])",
+            " ");
+
+        var expansions = QueryAliases
+            .Where(alias => query.Contains(alias.Phrase, StringComparison.OrdinalIgnoreCase))
+            .Select(alias => alias.Expansion)
+            .Distinct(StringComparer.OrdinalIgnoreCase);
+
+        return $"{normalized} {string.Join(' ', expansions)}";
     }
 
     /// <summary>

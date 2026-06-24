@@ -37,6 +37,7 @@ export function ChatHeader({ theme, onToggleTheme, onClear, onToggleSidebar }: P
         <button
           type="button"
           onClick={onClear}
+          aria-label="清空会话"
           className="flex items-center gap-1.5 rounded-[6px] border px-3 py-1.5 text-[13px] font-medium transition-colors hover:bg-[color:var(--bg-subtle)]"
           style={{ borderColor: 'var(--border)', color: 'var(--error)' }}
         >

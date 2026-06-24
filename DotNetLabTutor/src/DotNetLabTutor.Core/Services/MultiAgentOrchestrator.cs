@@ -13,6 +13,7 @@ public sealed class MultiAgentOrchestrator : IAgentService
     private readonly RetrievalAgentService _retrievalAgent;
     private readonly TutorAnswerAgentService _tutorAgent;
     private readonly ReActAgentService _reactAgent;
+    private readonly ICourseTopicCatalog _courseTopicCatalog;
     private readonly ISessionMemory _sessionMemory;
     private readonly ILogger<MultiAgentOrchestrator> _logger;
 
@@ -20,12 +21,14 @@ public sealed class MultiAgentOrchestrator : IAgentService
         RetrievalAgentService retrievalAgent,
         TutorAnswerAgentService tutorAgent,
         ReActAgentService reactAgent,
+        ICourseTopicCatalog courseTopicCatalog,
         ISessionMemory sessionMemory,
         ILogger<MultiAgentOrchestrator> logger)
     {
         _retrievalAgent = retrievalAgent;
         _tutorAgent = tutorAgent;
         _reactAgent = reactAgent;
+        _courseTopicCatalog = courseTopicCatalog;
         _sessionMemory = sessionMemory;
         _logger = logger;
     }
@@ -55,6 +58,37 @@ public sealed class MultiAgentOrchestrator : IAgentService
         string userMessage,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
+        if (ShouldListTopics(userMessage))
+        {
+            _sessionMemory.AddUserMessage(userMessage);
+            var topicAnswer = _courseTopicCatalog.ListTopics();
+            _sessionMemory.AddAssistantMessage(topicAnswer);
+
+            var topicStep = new AgentStepLog
+            {
+                Step = 1,
+                Thought = "识别到课程目录查询，读取知识库主题清单。",
+                Action = "CourseTopicCatalog.ListTopics()",
+                Observation = "已列出知识库覆盖的课程文档和主题。",
+                IsFinalAnswer = true,
+            };
+
+            yield return new AgentStreamEvent
+            {
+                Type = "final",
+                StepLog = topicStep,
+                Result = new AgentRunResult
+                {
+                    Answer = topicAnswer,
+                    StepsUsed = 1,
+                    StepLogs = [topicStep],
+                    ReachedStepLimit = false,
+                },
+            };
+
+            yield break;
+        }
+
         if (ShouldUseGuiAgent(userMessage))
         {
             _logger.LogInformation("Orchestrator routed request to ReAct GUI agent");
@@ -150,6 +184,24 @@ public sealed class MultiAgentOrchestrator : IAgentService
             "localhost",
             "http://",
             "https://");
+    }
+
+    private static bool ShouldListTopics(string userMessage)
+    {
+        var normalized = userMessage.Trim();
+        return ContainsAny(
+            normalized,
+            "课程主题",
+            "实验主题",
+            "知识库主题",
+            "列出主题",
+            "有哪些课程",
+            "能问哪些",
+            "可以问哪些",
+            "能问什么",
+            "可以问什么",
+            "list topics",
+            "course topics");
     }
 
     private static bool ContainsAny(string value, params string[] keywords)

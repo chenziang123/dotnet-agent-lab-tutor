@@ -55,6 +55,33 @@ public class RagServiceTests
     }
 
     [Fact]
+    public async Task SearchAsync_CamelCaseQuery_MatchesSpacedDocumentTerms()
+    {
+        var service = CreateService();
+        await service.InitializeAsync();
+
+        var result = await service.SearchAsync("SemanticKernelAgentFramework是什么？", topK: 5);
+
+        Assert.Contains(result, item => item.SourceFile == "01-sk-agent-framework.md");
+    }
+
+    [Fact]
+    public async Task SearchAsync_ChineseEnvironmentQuery_UsesCourseAliases()
+    {
+        var service = CreateService();
+        await service.InitializeAsync();
+
+        var result = await service.SearchAsync("实验二如何配置环境", topK: 5);
+
+        Assert.NotEmpty(result);
+        Assert.Contains(result, item => item.Score > 0);
+        Assert.Contains(result, item =>
+            item.Content.Contains("prerequisite", StringComparison.OrdinalIgnoreCase)
+            || item.Content.Contains("configure", StringComparison.OrdinalIgnoreCase)
+            || item.Content.Contains("install", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public async Task SearchAsync_TopK_RespectsLimit()
     {
         var service = CreateService();

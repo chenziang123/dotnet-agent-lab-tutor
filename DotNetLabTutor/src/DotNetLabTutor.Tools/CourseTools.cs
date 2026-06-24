@@ -7,7 +7,7 @@ namespace DotNetLabTutor.Tools;
 /// <summary>
 /// C 阶段真实课程工具：把 Agent 的 Tool Calling 接到 B 阶段 RAG 和会话工作记忆。
 /// </summary>
-public sealed class CourseTools
+public sealed class CourseTools : ICourseTopicCatalog
 {
     private const int DefaultTopK = 3;
     private const int MaxTopK = 5;

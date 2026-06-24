@@ -34,6 +34,10 @@ export default function Page() {
     fetchTopics()
       .then(setCourseDocs)
       .catch(() => setCourseDocs([]))
+
+    fetchSessionState(0)
+      .then(setSession)
+      .catch(() => setSession(initialSession))
   }, [])
 
   useEffect(() => {
