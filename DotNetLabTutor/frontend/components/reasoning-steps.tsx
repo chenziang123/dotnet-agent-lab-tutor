@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { ChevronDown, ListTree } from 'lucide-react'
 import type { ReasoningStep } from '@/lib/types'
 
@@ -38,8 +38,20 @@ function ObservationText({ text }: { text: string }) {
   )
 }
 
-export function ReasoningSteps({ steps }: { steps: ReasoningStep[] }) {
-  const [open, setOpen] = useState(false)
+export function ReasoningSteps({
+  steps,
+  streaming = false,
+}: {
+  steps: ReasoningStep[]
+  streaming?: boolean
+}) {
+  const [open, setOpen] = useState(streaming)
+
+  useEffect(() => {
+    if (streaming && steps.length > 0) {
+      setOpen(true)
+    }
+  }, [streaming, steps.length])
 
   return (
     <div

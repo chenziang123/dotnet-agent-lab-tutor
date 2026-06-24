@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using System.Text;
 using DotNetLabTutor.Core.Abstractions;
 using Microsoft.Extensions.Logging;
 
@@ -73,6 +74,11 @@ public sealed class MultiAgentOrchestrator : IAgentService
                 IsFinalAnswer = true,
             };
 
+            foreach (var deltaEvent in AnswerStreamEmitter.CreateDeltaEvents(topicAnswer))
+            {
+                yield return deltaEvent;
+            }
+
             yield return new AgentStreamEvent
             {
                 Type = "final",
@@ -114,6 +120,12 @@ public sealed class MultiAgentOrchestrator : IAgentService
             Message = "编排器：启动 Multi-Agent 顺序工作流（检索 Agent → 讲解 Agent）。",
         };
 
+        yield return new AgentStreamEvent
+        {
+            Type = "status",
+            Message = "检索 Agent：正在搜索课程知识库…",
+        };
+
         var retrieval = await _retrievalAgent.RetrieveAsync(userMessage, topK: 5, cancellationToken);
         var retrievalStep = new AgentStepLog
         {
@@ -135,7 +147,20 @@ public sealed class MultiAgentOrchestrator : IAgentService
             Message = "讲解 Agent：正在基于检索证据生成教学回答。",
         };
 
-        var answer = await _tutorAgent.GenerateAnswerAsync(userMessage, retrieval, cancellationToken);
+        var answerBuilder = new StringBuilder();
+        await foreach (var delta in _tutorAgent.StreamGenerateAnswerAsync(userMessage, retrieval, cancellationToken))
+        {
+            answerBuilder.Append(delta);
+            yield return new AgentStreamEvent
+            {
+                Type = "delta",
+                Delta = delta,
+            };
+        }
+
+        var answer = answerBuilder.Length > 0
+            ? answerBuilder.ToString()
+            : await _tutorAgent.GenerateAnswerAsync(userMessage, retrieval, cancellationToken);
         _sessionMemory.AddAssistantMessage(answer);
 
         var tutorStep = new AgentStepLog

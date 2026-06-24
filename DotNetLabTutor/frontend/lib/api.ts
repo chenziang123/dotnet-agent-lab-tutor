@@ -19,8 +19,9 @@ export type AgentRunResult = {
 }
 
 export type ChatStreamEvent = {
-  Type: 'status' | 'step' | 'final' | 'error'
+  Type: 'status' | 'step' | 'delta' | 'final' | 'error'
   Message?: string | null
+  Delta?: string | null
   StepLog?: AgentStepLog | null
   Result?: AgentRunResult | null
 }
@@ -141,6 +142,10 @@ async function requestChatStream(
 }
 
 function parseSseEvent(rawEvent: string): ChatStreamEvent | null {
+  if (!rawEvent.trim() || rawEvent.trimStart().startsWith(':')) {
+    return null
+  }
+
   const data = rawEvent
     .split('\n')
     .filter((line) => line.startsWith('data:'))
@@ -148,7 +153,24 @@ function parseSseEvent(rawEvent: string): ChatStreamEvent | null {
     .join('\n')
 
   if (!data) return null
-  return JSON.parse(data) as ChatStreamEvent
+
+  try {
+    const raw = JSON.parse(data) as Record<string, unknown>
+    return normalizeStreamEvent(raw)
+  } catch {
+    return null
+  }
+}
+
+function normalizeStreamEvent(raw: Record<string, unknown>): ChatStreamEvent {
+  const type = String(raw.Type ?? raw.type ?? '')
+  return {
+    Type: type as ChatStreamEvent['Type'],
+    Message: (raw.Message ?? raw.message ?? null) as string | null,
+    Delta: (raw.Delta ?? raw.delta ?? null) as string | null,
+    StepLog: (raw.StepLog ?? raw.stepLog ?? null) as AgentStepLog | null,
+    Result: (raw.Result ?? raw.result ?? null) as AgentRunResult | null,
+  }
 }
 
 export async function clearSession(): Promise<void> {
